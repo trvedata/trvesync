@@ -1,4 +1,8 @@
 module CRDT
+  # A pair of site_id and a Lamport clock (which is just a number).
+  # A timestamp uniquely identifies a particular operation, and thus also uniquely
+  # identifies a particular item in a data structure. It is a simplified version of
+  # Roh et al's S4Vector.
   class Timestamp < Struct.new(:site_id, :clock)
     include Comparable
 
@@ -9,6 +13,15 @@ module CRDT
     end
   end
 
+  # A simple CRDT that represents an ordered list of items. It allows random-access insertion
+  # or deletion of items. It is based on the "Replicated Growable Array" (RGA) datatype
+  # described in the following paper:
+  #
+  # Hyun-Gul Roh, Myeongjae Jeon, Jin-Soo Kim, and Joonwon Lee.
+  # Replicated abstract data types: Building blocks for collaborative applications.
+  # Journal of Parallel and Distributed Computing, 71(3):354-368, March 2011.
+  # http://dx.doi.org/10.1016/j.jpdc.2010.12.006
+  # http://csl.skku.edu/papers/jpdc11.pdf
   class OrderedList < Site
     include Enumerable
 
