@@ -31,16 +31,11 @@
     indicating any change of vector clock at the sender. This also identifies the causal
     dependencies of any following operations.
   fields:
-    - name: opCount
-      type: long
-      doc: >-
-        Current value of the sender peer's counter for operation sequence numbers (i.e. its own
-        entry in the vector clock). Subsequent operations are assumed to be consecutively numbered,
-        starting from this value.
     - name: updates
       doc: >-
         List of any changes that occurred in the sender peer's vector clock since the last
         ClockUpdate message was sent. For any peers not listed, the clock value has not changed.
+        The elements of this array must be in order of ascending peerIndex.
       type:
         type: array
         items:
@@ -102,6 +97,15 @@
     - name: origin
       type: PeerID
       doc: Globally unique identifier of the peer that sent this message.
+    - name: opCount
+      type: long
+      doc: >-
+        The current sequence number on the sender peer's operation counter (i.e. its own entry in
+        the vector clock). Subsequent operations are assumed to be consecutively numbered, starting
+        from this value. Including this number on every message acts as a check on the underlying
+        transport (making sure that operations are not dropped, duplicated or reordered), and it
+        allows detection of "forgetful" peers (which forget that they have already sent some
+        message, or forget some change that was broadcast but not stored durably due to a crash).
     - name: operations
       doc: Sequence of operations that have taken place at the origin peer.
       type:
