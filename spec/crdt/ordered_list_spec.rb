@@ -113,7 +113,7 @@ RSpec.describe CRDT::OrderedList do
       site1.insert(0, :a)
       site2.apply_operations(site1.flush_operations)
       site1.delete(0)
-      site1.insert(1, :b)
+      site2.insert(1, :b)
       site1.apply_operations(site2.flush_operations)
       site2.apply_operations(site1.flush_operations)
       expect(site1.to_a).to eq [:b]
