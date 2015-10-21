@@ -1,7 +1,10 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    avro (1.7.7)
+      multi_json
     diff-lcs (1.2.5)
+    multi_json (1.11.2)
     rspec (3.3.0)
       rspec-core (~> 3.3.0)
       rspec-expectations (~> 3.3.0)
@@ -20,4 +23,5 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  avro
   rspec

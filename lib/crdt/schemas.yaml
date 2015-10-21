@@ -1,0 +1,193 @@
+- name: PeerID
+  type: fixed
+  size: 16
+  doc: >-
+    128-bit globally unique identifier that uniquely identifies a particular device
+    (client node). For now this is just random, though it could also be a hash of the
+    device's public key, or something along those lines.
+
+- name: ItemID
+  type: record
+  doc: >-
+    A compact identifier that is unique within one data structure, and totally ordered. It is used
+    to identify an item within a data structure (e.g. an element in a list) unambiguously.
+  fields:
+    - name: logicalTS
+      type: long
+      doc: >-
+        A logical timestamp (Lamport clock); equivalently, the sum of all entries in a vector clock.
+    - name: peerIndex
+      type: long
+      doc: >-
+        Identifies the peer on which this ItemID originated. This number is functionally equivalent
+        to a PeerID, but it is more compact: it is the index of the peer in the PeerState's array of
+        peers. The ordering of this array is different on different peers, so the index is
+        translated from the remote view to the local view on arrival.
+
+- name: ClockUpdate
+  type: record
+  doc: >-
+    A ClockUpdate may be sent as part of a message broadcast from one peer to all other peers,
+    indicating any change of vector clock at the sender. This also identifies the causal
+    dependencies of any following operations.
+  fields:
+    - name: opCount
+      type: long
+      doc: >-
+        Current value of the sender peer's counter for operation sequence numbers (i.e. its own
+        entry in the vector clock). Subsequent operations are assumed to be consecutively numbered,
+        starting from this value.
+    - name: updates
+      doc: >-
+        List of any changes that occurred in the sender peer's vector clock since the last
+        ClockUpdate message was sent. For any peers not listed, the clock value has not changed.
+      type:
+        type: array
+        items:
+          name: PeerClockUpdate
+          type: record
+          doc: >-
+            Records that the sender of this update has received operations from a particular peer.
+            The first time that a particular peer is seen, this update also serves to notify others
+            about the peerIndex that this sender will use as compact representation of the PeerID.
+          fields:
+            - name: peerID
+              type: ["null", PeerID]
+              default: null
+              doc: >-
+                Globally unique identifier for the peer being described. This only needs to be
+                included the first time an update is sent for a particular peer; on subsequent
+                updates, the peerIndex is sufficient, and so the peerID can be set to null.
+            - name: peerIndex
+              type: long
+              doc: >-
+                Index of this peer in the sender PeerState's array of peers. This index will serve
+                as compact representation of the PeerID in subsequent updates from the same sender.
+            - name: opCount
+              type: long
+              doc: Highest operation sequence number that the sender has seen from this peer.
+
+- name: OrderedListInsert
+  type: record
+  doc: Operation recording the fact that an item was inserted into an ordered list.
+  fields:
+    - name: referenceID
+      type: ["null", ItemID]
+      doc: >-
+        Identifies the location at which the new item should be inserted. If null, the item is
+        inserted at the beginning of the list. Otherwise, this field is the ID of the item
+        immediately to the left of the inserted item (i.e. its immediate predecessor).
+    - name: newID
+      type: ItemID
+      doc: The ID of the newly inserted item.
+    - name: value
+      type: string
+      doc: The application-specified value inserted into the list.
+
+- name: OrderedListDelete
+  type: record
+  doc: Operation recording the fact that an item was deleted from an ordered list.
+  fields:
+    - name: deleteID
+      type: ItemID
+      doc: The ID of the item being deleted from the list.
+    - name: deleteTS
+      type: ItemID
+      doc: The timestamp of the deletion operation (which will be used for the tombstone).
+
+- name: Message
+  type: record
+  doc: Packet of information that is broadcast from one peer to all other peers.
+  fields:
+    - name: origin
+      type: PeerID
+      doc: Globally unique identifier of the peer that sent this message.
+    - name: operations
+      doc: Sequence of operations that have taken place at the origin peer.
+      type:
+        type: array
+        items: [ClockUpdate, OrderedListInsert, OrderedListDelete]
+
+- name: OrderedList
+  type: record
+  doc: Stores a peer's local state for a CRDT containing an ordered list of items.
+  fields:
+    - name: items
+      doc: The items of the list, in correct application order, including tombstones.
+      default: []
+      type:
+        type: array
+        items:
+          name: OrderedListItem
+          type: record
+          doc: One item of an ordered list.
+          fields:
+            - name: id
+              type: ItemID
+              doc: >-
+                Immutable identifier for this list item, assigned when the item is inserted. The ID is
+                unique within this list, but not globally unique. Subsequent operations that need to
+                refer to a particular item in the list may use this identifier.
+            - name: value
+              type: ["null", string]
+              doc: >-
+                The application-specified value of this list item. Set to null when the item is
+                deleted from the list.
+            - name: deleteTS
+              type: ["null", ItemID]
+              doc: >-
+                Tombstone timestamp. As long as the list item has not been deleted, this field is set
+                to null. When it is deleted, the field is set to the timestamp of the deletion
+                operation.
+
+- name: PeerState
+  type: record
+  doc: >-
+    Records the state of a peer device and its knowledge about other peers. This structure is
+    written to stable storage when a peer shuts down, and loaded when it comes back up.
+  fields:
+    - name: logicalTS
+      type: long
+      doc: >-
+        The latest logical timestamp (Lamport clock) at this peer. This value is incremented every
+        time a new operation is issued at this peer, and if a greater timestamp from another peer
+        is seen, this value is increased to that maximum.
+    - name: peers
+      doc: >-
+        List of all the peers that this peer is aware of. The first entry in this array is this peer
+        itself (the one on which this structure is stored), subsequent entries are other peers.
+      type:
+        type: array
+        items:
+          name: PeerEntry
+          type: record
+          doc: Everything that this peer knows about some other peer.
+          fields:
+            - name: peerID
+              type: PeerID
+              doc: Globally unique identifier of the peer described in this record.
+            - name: vclock
+              doc: >-
+                For each peer we record a vector clock that summarizes that peer's view of the world.
+                The first entry in this array is always that peer's view of itself, and subsequent
+                entries are its view of other peers. The index of a peer in this array is often used
+                as a more compact alternative to the PeerID.
+              type:
+                type: array
+                items:
+                  name: PeerVClockEntry
+                  type: record
+                  fields:
+                    - name: peerID
+                      type: PeerID
+                      doc: Globally unique identifier of the peer described in this record.
+                    - name: opCount
+                      type: long
+                      default: 0
+                      doc: >-
+                        The number of operations we have processed that originated on this peer. We
+                        expect operations from a given peer to have sequentially numbered operations
+                        (with no gaps in the sequence).
+    - name: data
+      type: OrderedList
+      doc: The actual data structure being maintained at this peer.
