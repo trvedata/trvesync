@@ -23,15 +23,15 @@ RSpec.describe CRDT::Peer do
   end
 
   it 'should save and reload its state' do
-    peer = CRDT::Peer.create
+    peer = CRDT::Peer.new
     peer.save(new_tempfile)
     reloaded = CRDT::Peer.load(@tempfiles.first.path)
     expect(reloaded.peer_id).to eq peer.peer_id
   end
 
   it 'should send a message from one peer to another' do
-    peer1 = CRDT::Peer.create
-    peer2 = CRDT::Peer.create
+    peer1 = CRDT::Peer.new
+    peer2 = CRDT::Peer.new
     peer1.local_operation
     peer2.receive_message(peer1.encode_message.tap {|m| @msg1 = decode_msg(m) })
     @msg2 = decode_msg(peer2.encode_message)
