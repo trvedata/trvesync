@@ -1,18 +1,4 @@
 module CRDT
-  # A pair of site_id and a Lamport clock (which is just a number).
-  # A timestamp uniquely identifies a particular operation, and thus also uniquely
-  # identifies a particular item in a data structure. It is a simplified version of
-  # Roh et al's S4Vector.
-  class Timestamp < Struct.new(:site_id, :clock)
-    include Comparable
-
-    def <=>(other)
-      return +1 if self.clock > other.clock
-      return -1 if self.clock < other.clock
-      self.site_id <=> other.site_id
-    end
-  end
-
   # A simple CRDT that represents an ordered list of items. It allows random-access insertion
   # or deletion of items. It is based on the "Replicated Growable Array" (RGA) datatype
   # described in the following paper:
@@ -22,17 +8,20 @@ module CRDT
   # Journal of Parallel and Distributed Computing, 71(3):354-368, March 2011.
   # http://dx.doi.org/10.1016/j.jpdc.2010.12.006
   # http://csl.skku.edu/papers/jpdc11.pdf
-  class OrderedList < Site
+  class OrderedList
     include Enumerable
 
-    Operation = Struct.new(:origin, :vclock, :opcode, :reference_ts, :new_ts, :value)
-    Item = Struct.new(:insert_ts, :delete_ts, :value, :previous, :next)
+    Operation = Struct.new(:origin, :vclock, :opcode, :reference_id, :new_id, :value)
+    Item = Struct.new(:insert_id, :delete_id, :value, :previous, :next)
 
-    # Creates an empty ordered list for a given +site_id+ (which must be unique).
-    def initialize(site_id)
-      super
+    attr_reader :peer_id, :vclock
+
+    # Creates an empty ordered list for a given +peer_id+ (which must be unique).
+    def initialize(peer_id)
+      @peer_id = peer_id
+      @vclock = Hash.new(0)
       @lamport_clock = 0
-      @items_by_ts = {}
+      @items_by_id = {}
       @head = nil
       @tail = nil
       @operations = []
@@ -43,7 +32,7 @@ module CRDT
     def each(&block)
       item = @head
       while item
-        yield item.value unless item.delete_ts
+        yield item.value unless item.delete_id
         item = item.next
       end
     end
@@ -53,23 +42,35 @@ module CRDT
     def insert(index, value)
       if index > 0
         right_item = item_by_index(index)
-        left_ts = right_item ? right_item.previous.insert_ts : @tail.insert_ts
+        left_id = right_item ? right_item.previous.insert_id : @tail.insert_id
       end
-      item = insert_after_ts(left_ts, next_ts, value)
-      @operations << Operation.new(site_id, vclock.dup, :insert,
-                                   item.previous && item.previous.insert_ts,
-                                   item.insert_ts, item.value)
+      item = insert_after_id(left_id, next_id, value)
+      @operations << Operation.new(peer_id, vclock.dup, :insert,
+                                   item.previous && item.previous.insert_id,
+                                   item.insert_id, item.value)
       self
     end
 
     # Deletes the item at the given +index+ in the list (local operation).
     def delete(index)
       item = item_by_index(index) or raise IndexError
-      item.delete_ts = next_ts
+      item.delete_id = next_id
       item.value = nil
-      @operations << Operation.new(site_id, vclock.dup, :delete,
-                                   item.insert_ts, item.delete_ts, nil)
+      @operations << Operation.new(peer_id, vclock.dup, :delete,
+                                   item.insert_id, item.delete_id, nil)
       self
+    end
+
+    # Returns +true+ if the causal dependencies of +operation+ have been satisfied,
+    # so it is ready to be delivered to this site.
+    def causally_ready?(operation)
+      (self.vclock.keys | operation.vclock.keys).all? do |peer_id|
+        if operation.origin == peer_id
+          operation.vclock[peer_id] == self.vclock[peer_id] + 1
+        else
+          operation.vclock[peer_id] <= self.vclock[peer_id]
+        end
+      end
     end
 
     # Returns a list of operations that should be sent to remote sites.
@@ -87,17 +88,17 @@ module CRDT
 
       case operation.opcode
       when :insert
-        insert_after_ts(operation.reference_ts, operation.new_ts, operation.value)
+        insert_after_id(operation.reference_id, operation.new_id, operation.value)
       when :delete
-        item = @items_by_ts[operation.reference_ts] or raise IndexError
-        item.delete_ts = operation.new_ts
+        item = @items_by_id[operation.reference_id] or raise IndexError
+        item.delete_id = operation.new_id
         item.value = nil
       else raise "Invalid operation: #{operation.opcode}"
       end
 
       # Lamport clock
-      if @lamport_clock < operation.new_ts.clock
-        @lamport_clock = operation.new_ts.clock
+      if @lamport_clock < operation.new_id.logical_ts
+        @lamport_clock = operation.new_id.logical_ts
       end
 
       # Vector clock
@@ -110,24 +111,24 @@ module CRDT
 
     private
 
-    # Inserts a new list item to the right of the item identified by +left_ts+.
-    # If +left_ts+ is nil, inserts a new list item at the head.
-    # The new item has timestamp +insert_ts+ and the given +value+.
+    # Inserts a new list item to the right of the item identified by +left_id+.
+    # If +left_id+ is nil, inserts a new list item at the head.
+    # The new item has ID +insert_id+ and the given +value+.
     # Returns the newly inserted item.
-    def insert_after_ts(left_ts, insert_ts, value)
-      if left_ts
-        left_item = @items_by_ts[left_ts] or raise IndexError
-      elsif @head && @head.insert_ts > insert_ts
+    def insert_after_id(left_id, insert_id, value)
+      if left_id
+        left_item = @items_by_id[left_id] or raise IndexError
+      elsif @head && @head.insert_id > insert_id
         left_item = @head
       end
 
-      while left_item && left_item.next && left_item.next.insert_ts > insert_ts
+      while left_item && left_item.next && left_item.next.insert_id > insert_id
         left_item = left_item.next
       end
       right_item = left_item ? left_item.next : @head
 
-      item = Item.new(insert_ts, nil, value, left_item, right_item)
-      @items_by_ts[insert_ts] = item
+      item = Item.new(insert_id, nil, value, left_item, right_item)
+      @items_by_id[insert_id] = item
 
       left_item.next = item if left_item
       right_item.previous = item if right_item
@@ -140,17 +141,17 @@ module CRDT
     # Returns nil if the index is out of range. FIXME: O(n) complexity.
     def item_by_index(index)
       item = @head
-      while item && (item.delete_ts || index > 0)
-        index -= 1 unless item.delete_ts
+      while item && (item.delete_id || index > 0)
+        index -= 1 unless item.delete_id
         item = item.next
       end
       item
     end
 
-    def next_ts
-      vclock[site_id] += 1
+    def next_id
+      vclock[peer_id] += 1
       @lamport_clock += 1
-      ::CRDT::Timestamp.new(site_id, @lamport_clock)
+      ::CRDT::ItemID.new(@lamport_clock, peer_id)
     end
   end
 end

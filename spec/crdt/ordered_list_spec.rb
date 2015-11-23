@@ -32,7 +32,7 @@ RSpec.describe CRDT::OrderedList do
       expect(list.flush_operations).to eq [
         CRDT::OrderedList::Operation.new(
           :site1, {:site1 => 1}, :insert, nil,
-          CRDT::Timestamp.new(:site1, 1), :a)
+          CRDT::ItemID.new(1, :site1), :a)
       ]
     end
 
@@ -40,7 +40,7 @@ RSpec.describe CRDT::OrderedList do
       list = CRDT::OrderedList.new(:site1)
       list.insert(0, :a).insert(1, :b).insert(2, :c).delete(1)
       ops = list.flush_operations
-      expect(ops.map {|op| op.new_ts.clock }).to eq [1, 2, 3, 4]
+      expect(ops.map {|op| op.new_id.logical_ts }).to eq [1, 2, 3, 4]
       expect(ops.map {|op| op.vclock[:site1] }).to eq [1, 2, 3, 4]
       expect(ops.map {|op| op.value }).to eq [:a, :b, :c, nil]
     end
@@ -49,10 +49,10 @@ RSpec.describe CRDT::OrderedList do
       list = CRDT::OrderedList.new(:site1)
       list.insert(0, :a).insert(1, :b).insert(2, :c).delete(1)
       ops = list.flush_operations
-      expect(ops[0].reference_ts).to eq nil
-      expect(ops[1].reference_ts).to eq CRDT::Timestamp.new(:site1, 1)
-      expect(ops[2].reference_ts).to eq CRDT::Timestamp.new(:site1, 2)
-      expect(ops[3].reference_ts).to eq CRDT::Timestamp.new(:site1, 2)
+      expect(ops[0].reference_id).to eq nil
+      expect(ops[1].reference_id).to eq CRDT::ItemID.new(1, :site1)
+      expect(ops[2].reference_id).to eq CRDT::ItemID.new(2, :site1)
+      expect(ops[3].reference_id).to eq CRDT::ItemID.new(2, :site1)
     end
 
     it 'should include details of a delete operation' do
@@ -61,8 +61,8 @@ RSpec.describe CRDT::OrderedList do
       expect(list.flush_operations.last).to eq (
         CRDT::OrderedList::Operation.new(
           :site1, {:site1 => 2}, :delete,
-          CRDT::Timestamp.new(:site1, 1),
-          CRDT::Timestamp.new(:site1, 2), nil)
+          CRDT::ItemID.new(1, :site1),
+          CRDT::ItemID.new(2, :site1), nil)
       )
     end
 

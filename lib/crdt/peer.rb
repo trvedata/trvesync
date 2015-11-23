@@ -1,6 +1,22 @@
 require 'openssl'
 
 module CRDT
+  # A pair of logical timestamp (Lamport clock, which is just a number) and peer ID (256-bit hex
+  # string that uniquely identifies a particular device). A peer increments its timestamp on every
+  # operation, so this pair uniquely identifies a particular object, e.g. an element in a list.
+  # It also provides a total ordering that is consistent with causality: if operation A happened
+  # before operation B, then A's ItemID is lower than B's ItemID. The ordering of concurrent
+  # operations is deterministic but arbitrary.
+  class ItemID < Struct.new(:logical_ts, :peer_id)
+    include Comparable
+
+    def <=>(other)
+      return +1 if self.logical_ts > other.logical_ts
+      return -1 if self.logical_ts < other.logical_ts
+      self.peer_id <=> other.peer_id
+    end
+  end
+
   class Peer
     include Encoding
 
