@@ -11,20 +11,29 @@ module CRDT
   class OrderedList
     include Enumerable
 
-    Operation = Struct.new(:origin, :vclock, :opcode, :reference_id, :new_id, :value)
-    Item = Struct.new(:insert_id, :delete_id, :value, :previous, :next)
+    # Operation to represent the insertion of an element into a list.
+    class InsertOp < Struct.new(:reference_id, :new_id, :value)
+      def logical_ts; new_id.logical_ts; end
+    end
 
-    attr_reader :peer_id, :vclock
+    # Operation to represent the deletion of an element from a list.
+    class DeleteOp < Struct.new(:delete_id, :delete_ts)
+      def logical_ts; delete_ts.logical_ts; end
+    end
 
-    # Creates an empty ordered list for a given +peer_id+ (which must be unique).
-    def initialize(peer_id)
-      @peer_id = peer_id
-      @vclock = Hash.new(0)
+    # Internal structure representing a list element.
+    class Item < Struct.new(:insert_id, :delete_ts, :value, :previous, :next)
+    end
+
+    attr_reader :peer
+
+    # Creates an empty ordered list, running at the local +peer+.
+    def initialize(peer)
+      @peer = peer or raise ArgumentError, 'peer must be set'
       @lamport_clock = 0
       @items_by_id = {}
       @head = nil
       @tail = nil
-      @operations = []
     end
 
     # Iterates over the items in the list in order, skipping tombstones, and yields
@@ -32,7 +41,7 @@ module CRDT
     def each(&block)
       item = @head
       while item
-        yield item.value unless item.delete_id
+        yield item.value unless item.delete_ts
         item = item.next
       end
     end
@@ -44,69 +53,34 @@ module CRDT
         right_item = item_by_index(index)
         left_id = right_item ? right_item.previous.insert_id : @tail.insert_id
       end
-      item = insert_after_id(left_id, next_id, value)
-      @operations << Operation.new(peer_id, vclock.dup, :insert,
-                                   item.previous && item.previous.insert_id,
-                                   item.insert_id, item.value)
+      item = insert_after_id(left_id, @peer.next_id, value)
+      op = InsertOp.new(item.previous && item.previous.insert_id,
+                        item.insert_id, item.value)
+      @peer.send_operation(op)
       self
     end
 
     # Deletes the item at the given +index+ in the list (local operation).
     def delete(index)
       item = item_by_index(index) or raise IndexError
-      item.delete_id = next_id
+      item.delete_ts = @peer.next_id
       item.value = nil
-      @operations << Operation.new(peer_id, vclock.dup, :delete,
-                                   item.insert_id, item.delete_id, nil)
+      @peer.send_operation(DeleteOp.new(item.insert_id, item.delete_ts))
       self
-    end
-
-    # Returns +true+ if the causal dependencies of +operation+ have been satisfied,
-    # so it is ready to be delivered to this site.
-    def causally_ready?(operation)
-      (self.vclock.keys | operation.vclock.keys).all? do |peer_id|
-        if operation.origin == peer_id
-          operation.vclock[peer_id] == self.vclock[peer_id] + 1
-        else
-          operation.vclock[peer_id] <= self.vclock[peer_id]
-        end
-      end
-    end
-
-    # Returns a list of operations that should be sent to remote sites.
-    # Resets the list, so the same operations won't be returned again.
-    def flush_operations
-      return_ops = @operations
-      @operations = []
-      return_ops
     end
 
     # Applies a remote operation to a local copy of the data structure.
     # The operation must be causally ready, as per the data structure's vector clock.
     def apply_operation(operation)
-      raise 'Operation is not ready to be applied' unless causally_ready?(operation)
-
-      case operation.opcode
-      when :insert
+      case operation
+      when InsertOp
         insert_after_id(operation.reference_id, operation.new_id, operation.value)
-      when :delete
-        item = @items_by_id[operation.reference_id] or raise IndexError
-        item.delete_id = operation.new_id
+      when DeleteOp
+        item = @items_by_id[operation.delete_id] or raise IndexError
+        item.delete_ts = operation.delete_ts
         item.value = nil
-      else raise "Invalid operation: #{operation.opcode}"
+      else raise "Invalid operation: #{operation}"
       end
-
-      # Lamport clock
-      if @lamport_clock < operation.new_id.logical_ts
-        @lamport_clock = operation.new_id.logical_ts
-      end
-
-      # Vector clock
-      @vclock[operation.origin] += 1
-    end
-
-    def apply_operations(operations)
-      operations.each {|op| apply_operation(op) }
     end
 
     private
@@ -141,17 +115,11 @@ module CRDT
     # Returns nil if the index is out of range. FIXME: O(n) complexity.
     def item_by_index(index)
       item = @head
-      while item && (item.delete_id || index > 0)
-        index -= 1 unless item.delete_id
+      while item && (item.delete_ts || index > 0)
+        index -= 1 unless item.delete_ts
         item = item.next
       end
       item
-    end
-
-    def next_id
-      vclock[peer_id] += 1
-      @lamport_clock += 1
-      ::CRDT::ItemID.new(@lamport_clock, peer_id)
     end
   end
 end

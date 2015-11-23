@@ -26,6 +26,9 @@ module CRDT
     # Keeps track of the key facts that we know about our peers.
     attr_reader :peer_matrix
 
+    # CRDT data structure (TODO generalise this)
+    attr_reader :ordered_list
+
     # Lamport clock
     attr_reader :logical_ts
 
@@ -39,6 +42,7 @@ module CRDT
     def initialize(peer_id=nil)
       @peer_id = peer_id || bin_to_hex(OpenSSL::Random.random_bytes(32))
       @peer_matrix = PeerMatrix.new(@peer_id)
+      @ordered_list = OrderedList.new(self)
       @logical_ts = 0
       @operations = []
     end
@@ -47,27 +51,33 @@ module CRDT
       !@peer_matrix.update_by_peer_id.empty? || !@operations.empty?
     end
 
-    # TODO placeholder
-    def local_operation
-      @operations << {
-        'referenceID' => nil,
-        'newID' => {'logicalTS' => 0, 'peerIndex' => 0},
-        'value' => 'a'
-      }
+    def next_id
       @logical_ts += 1
+      ItemID.new(@logical_ts, peer_id)
+    end
+
+    def send_operation(operation)
+      @operations << operation
       @peer_matrix.local_operation
     end
 
-    private
-
-    def process_list_insert(origin_peer_id, operation)
-      # TODO
-      peer_matrix.increment_op_count(origin_peer_id)
+    # Returns a list of operations that should be sent to remote sites.
+    # Resets the list, so the same operations won't be returned again.
+    def flush_operations
+      return_ops = @operations
+      @operations = []
+      return_ops
     end
 
-    def process_list_delete(origin_peer_id, operation)
-      # TODO
-      peer_matrix.increment_op_count(origin_peer_id)
+    def receive_operation(operation)
+      if @logical_ts < operation.logical_ts
+        @logical_ts = operation.logical_ts
+      end
+      ordered_list.apply_operation(operation)
+    end
+
+    def receive_operations(operations)
+      operations.each {|op| receive_operation(op) }
     end
   end
 end
