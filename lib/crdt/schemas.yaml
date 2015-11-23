@@ -1,8 +1,8 @@
 - name: PeerID
   type: fixed
-  size: 16
+  size: 32
   doc: >-
-    128-bit globally unique identifier that uniquely identifies a particular device
+    256-bit globally unique identifier that uniquely identifies a particular device
     (client node). For now this is just random, though it could also be a hash of the
     device's public key, or something along those lines.
 

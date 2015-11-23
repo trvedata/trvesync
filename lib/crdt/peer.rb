@@ -4,7 +4,7 @@ module CRDT
   class Peer
     include Encoding
 
-    # 128-bit hex string that uniquely identifies this peer.
+    # 256-bit hex string that uniquely identifies this peer.
     attr_reader :peer_id
 
     # Keeps track of the key facts that we know about our peers.
@@ -19,9 +19,9 @@ module CRDT
     end
 
     # Initializes a new peer instance with default state. If no peer ID is given, it is assigned a
-    # new random peer ID (128-bit hex string).
+    # new random peer ID (256-bit hex string).
     def initialize(peer_id=nil)
-      @peer_id = peer_id || bin_to_hex(OpenSSL::Random.random_bytes(16))
+      @peer_id = peer_id || bin_to_hex(OpenSSL::Random.random_bytes(32))
       @peer_matrix = PeerMatrix.new(@peer_id)
       @logical_ts = 0
       @operations = []

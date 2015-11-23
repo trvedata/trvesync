@@ -2,7 +2,7 @@ module CRDT
   # Keeps track of what each peer knows about each other peer. This structure saves us from having
   # to send around full vector clocks all the time: instead, peers can just send diffs of their
   # vector clock when it is updated, and those diffs are applied to this matrix. It also enables
-  # us to use a peer index (a small number) instead of a full 128-bit peer ID, which further
+  # us to use a peer index (a small number) instead of a full 256-bit peer ID, which further
   # reduces message sizes.
   #
   # Each peer has its own mapping from peer IDs to peer indexes (to avoid having to coordinate
