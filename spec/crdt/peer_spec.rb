@@ -32,13 +32,13 @@ RSpec.describe CRDT::Peer do
   it 'should send a message from one peer to another' do
     peer1 = CRDT::Peer.new
     peer2 = CRDT::Peer.new
-    peer1.local_operation
+    peer1.ordered_list.insert(0, 'a')
     peer2.receive_message(peer1.encode_message.tap {|m| @msg1 = decode_msg(m) })
     @msg2 = decode_msg(peer2.encode_message)
 
     expect(@msg1['operations']).to eq([{
       'referenceID' => nil,
-      'newID' => {'logicalTS' => 0, 'peerIndex' => 0},
+      'newID' => {'logicalTS' => 1, 'peerIndex' => 0},
       'value' => 'a'
     }])
     expect(@msg2['operations']).to eq([{'updates' => [{

@@ -73,7 +73,7 @@ RSpec.describe CRDT::OrderedList do
       peer1 = CRDT::Peer.new(:peer1)
       peer2 = CRDT::Peer.new(:peer2)
       peer1.ordered_list.insert(0, :a).insert(1, :b).insert(2, :c).delete(1)
-      peer2.receive_operations(peer1.flush_operations)
+      peer2.receive_operations(peer1.peer_id, peer1.flush_operations)
       expect(peer2.ordered_list.to_a).to eq [:a, :c]
     end
 
@@ -81,11 +81,11 @@ RSpec.describe CRDT::OrderedList do
       peer1 = CRDT::Peer.new(:peer1)
       peer2 = CRDT::Peer.new(:peer2)
       peer1.ordered_list.insert(0, :a)
-      peer2.receive_operations(peer1.flush_operations)
+      peer2.receive_operations(peer1.peer_id, peer1.flush_operations)
       peer2.ordered_list.insert(1, :b)
       peer1.ordered_list.insert(1, :c)
-      peer1.receive_operations(peer2.flush_operations)
-      peer2.receive_operations(peer1.flush_operations)
+      peer1.receive_operations(peer2.peer_id, peer2.flush_operations)
+      peer2.receive_operations(peer1.peer_id, peer1.flush_operations)
       expect(peer1.ordered_list.to_a).to eq [:a, :b, :c]
       expect(peer2.ordered_list.to_a).to eq [:a, :b, :c]
     end
@@ -95,8 +95,8 @@ RSpec.describe CRDT::OrderedList do
       peer2 = CRDT::Peer.new(:peer2)
       peer2.ordered_list.insert(0, :a).insert(1, :b)
       peer1.ordered_list.insert(0, :c).insert(1, :d)
-      peer2.receive_operations(peer1.flush_operations)
-      peer1.receive_operations(peer2.flush_operations)
+      peer2.receive_operations(peer1.peer_id, peer1.flush_operations)
+      peer1.receive_operations(peer2.peer_id, peer2.flush_operations)
       expect(peer1.ordered_list.to_a).to eq [:a, :b, :c, :d]
       expect(peer2.ordered_list.to_a).to eq [:a, :b, :c, :d]
     end
@@ -105,21 +105,32 @@ RSpec.describe CRDT::OrderedList do
       peer1 = CRDT::Peer.new(:peer1)
       peer2 = CRDT::Peer.new(:peer2)
       peer1.ordered_list.insert(0, :a)
-      peer2.receive_operations(peer1.flush_operations)
+      peer2.receive_operations(peer1.peer_id, peer1.flush_operations)
       peer1.ordered_list.delete(0)
       peer2.ordered_list.insert(1, :b)
-      peer1.receive_operations(peer2.flush_operations)
-      peer2.receive_operations(peer1.flush_operations)
+      peer1.receive_operations(peer2.peer_id, peer2.flush_operations)
+      peer2.receive_operations(peer1.peer_id, peer1.flush_operations)
       expect(peer1.ordered_list.to_a).to eq [:b]
       expect(peer2.ordered_list.to_a).to eq [:b]
     end
+  end
 
-    it 'should not generate any further operations' do
+  context 'causality' do
+    it 'should check that dependencies are satisfied' do
       peer1 = CRDT::Peer.new(:peer1)
       peer2 = CRDT::Peer.new(:peer2)
+      peer3 = CRDT::Peer.new(:peer3)
       peer1.ordered_list.insert(0, :a)
-      peer2.receive_operations(peer1.flush_operations)
-      expect(peer2.flush_operations).to eq []
+      peer1_ops = peer1.flush_operations
+
+      peer2.receive_operations(peer1.peer_id, peer1_ops)
+      peer2.ordered_list.insert(1, :b)
+      peer2_ops = peer2.flush_operations
+
+      peer3.receive_operations(peer2.peer_id, peer2_ops)
+      expect(peer3.ordered_list.to_a).to eq []
+      peer3.receive_operations(peer1.peer_id, peer1_ops)
+      expect(peer3.ordered_list.to_a).to eq [:a, :b]
     end
   end
 end

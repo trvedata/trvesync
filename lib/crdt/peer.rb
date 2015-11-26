@@ -44,11 +44,12 @@ module CRDT
       @peer_matrix = PeerMatrix.new(@peer_id)
       @ordered_list = OrderedList.new(self)
       @logical_ts = 0
-      @operations = []
+      @send_buf = []
+      @recv_buf = {} # map of origin_peer_id => array of operations
     end
 
     def anything_to_send?
-      !@peer_matrix.update_by_peer_id.empty? || !@operations.empty?
+      !@peer_matrix.local_clock_update.empty? || !@send_buf.empty?
     end
 
     def next_id
@@ -57,27 +58,72 @@ module CRDT
     end
 
     def send_operation(operation)
-      @operations << operation
+      # Record causal dependencies of the operation before the operation itself
+      if !peer_matrix.local_clock_update.empty?
+        @send_buf << peer_matrix.local_clock_update
+        peer_matrix.reset_clock_update
+      end
+
+      @send_buf << operation
       @peer_matrix.local_operation
     end
 
-    # Returns a list of operations that should be sent to remote sites.
+    # Returns a list of operations that should be sent to remote peers.
     # Resets the list, so the same operations won't be returned again.
     def flush_operations
-      return_ops = @operations
-      @operations = []
+      if !peer_matrix.local_clock_update.empty?
+        @send_buf << peer_matrix.local_clock_update
+        peer_matrix.reset_clock_update
+      end
+
+      return_ops = @send_buf
+      @send_buf = []
       return_ops
     end
 
-    def receive_operation(operation)
-      if @logical_ts < operation.logical_ts
-        @logical_ts = operation.logical_ts
-      end
-      ordered_list.apply_operation(operation)
+    # Receives operations from a remote peer. The operations will be applied immediately if they are
+    # causally ready, or buffered until later if dependencies are missing.
+    def receive_operations(origin_peer_id, operations)
+      @recv_buf[origin_peer_id] ||= []
+      @recv_buf[origin_peer_id].concat(operations)
+      while apply_operations_if_ready; end
     end
 
-    def receive_operations(operations)
-      operations.each {|op| receive_operation(op) }
+    private
+
+    # Checks if there are any causally ready operations in the receive buffer that we can apply, and
+    # if so, applies them. Returns false if nothing was applied, and returns true if something was
+    # applied. Keep calling this method in a loop until it returns false, to ensure all ready
+    # buffers are drained.
+    def apply_operations_if_ready
+      ready_peer_id, ready_ops = @recv_buf.detect do |peer_id, ops|
+        peer_matrix.causally_ready?(peer_id) && !ops.empty?
+      end
+      return false if ready_peer_id.nil?
+
+      while ready_ops.size > 0
+        operation = ready_ops.shift
+
+        if operation.is_a? PeerMatrix::ClockUpdate
+          peer_matrix.apply_clock_update(ready_peer_id, operation)
+
+          # Applying the clock update might make the following operations causally non-ready, so we
+          # stop processing operations from this peer and check again for causal readiness.
+          return true
+        else
+          apply_operation(ready_peer_id, operation)
+        end
+      end
+
+      true # Finished this peer, now another peer's operations might be causally ready
+    end
+
+    # Takes a single operation that we received from a remote peer, and applies it to the local
+    # CRDT data structure.
+    def apply_operation(origin_peer_id, operation)
+      @logical_ts = operation.logical_ts if @logical_ts < operation.logical_ts
+      peer_matrix.increment_op_count(origin_peer_id)
+      ordered_list.apply_operation(operation)
     end
   end
 end

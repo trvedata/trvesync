@@ -82,43 +82,35 @@ module CRDT
         assigned_index = peer_matrix.peer_id_to_index(origin_peer_id)
         raise "Index mismatch: #{index} != #{assigned_index}" if index != assigned_index
 
+        entries = []
         peer['vclock'].each_with_index do |entry, entry_index|
-          peer_matrix.clock_update(origin_peer_id, bin_to_hex(entry['peerID']), entry_index, entry['opCount'])
+          entries << PeerMatrix::PeerVClockEntry.new(
+            bin_to_hex(entry['peerID']), entry_index, entry['opCount'])
         end
+        peer_matrix.apply_clock_update(origin_peer_id, PeerMatrix::ClockUpdate.new(entries))
       end
     end
 
     # Takes all accumulated changes since the last call to #encode_message, and returns them as an
     # Avro-encoded byte string that should be broadcast to all peers.
     def encode_message
-      message = {
-        'origin' => hex_to_bin(peer_id),
-        'opCount' => peer_matrix.matrix[0][0].op_count - @operations.size,
-        'operations' => []
-      }
-
-      unless peer_matrix.update_by_peer_id.empty?
-        message['operations'] << {'updates' => encode_clock_updates}
+      operations = flush_operations.map do |operation|
+        case operation
+        when PeerMatrix::ClockUpdate then encode_clock_update(operation)
+        when OrderedList::InsertOp   then encode_list_insert(operation)
+        when OrderedList::DeleteOp   then encode_list_delete(operation)
+        end
       end
 
-      message['operations'].concat(@operations)
-      @operations = []
+      message = {
+        'origin'     => hex_to_bin(peer_id),
+        'opCount'    => peer_matrix.matrix[0][0].op_count - operations.size,
+        'operations' => operations
+      }
 
       encoder = Avro::IO::BinaryEncoder.new(StringIO.new)
       Avro::IO::DatumWriter.new(MESSAGE_SCHEMA).write(message, encoder)
       encoder.writer.string
-    end
-
-    def encode_clock_updates
-      updates = peer_matrix.update_by_peer_id.values.map do |update|
-        {
-          'peerID' => update.peer_id ? hex_to_bin(update.peer_id) : nil,
-          'peerIndex' => update.peer_index,
-          'opCount' => update.op_count
-        }
-      end
-      peer_matrix.update_by_peer_id.clear
-      updates
     end
 
     # Receives an incoming message from another peer, given as an Avro-encoded byte string.
@@ -130,26 +122,118 @@ module CRDT
 
       origin_peer_id = bin_to_hex(message['origin'])
       peer_matrix.process_incoming_op_count(origin_peer_id, message['opCount'])
+      operations = []
 
       message['operations'].each do |operation|
         if operation['opCount'] # ClockUpdate message
-          process_clock_update(origin_peer_id, operation)
+          operations << decode_clock_update(origin_peer_id, operation)
         elsif operation['newID'] # OrderedListInsert message
-          process_list_insert(origin_peer_id, operation)
+          operations << decode_list_insert(origin_peer_id, operation)
         elsif operation['deleteID'] # OrderedListDelete message
-          process_list_delete(origin_peer_id, operation)
+          operations << decode_list_delete(origin_peer_id, operation)
         else
           raise "Unexpected operation type: #{operation.inspect}"
         end
       end
+
+      receive_operations(origin_peer_id, operations) unless operations.empty?
     end
 
-    # Processes a ClockUpdate message from a remote peer and applies it to the local state.
-    def process_clock_update(origin_peer_id, operation)
-      operation['updates'].each do |update|
-        subject_peer_id = bin_to_hex(update['peerID']) if update['peerID']
-        peer_matrix.clock_update(origin_peer_id, subject_peer_id, update['peerIndex'], update['opCount'])
+    # Decodes a ClockUpdate message from a remote peer. It has the following structure:
+    #
+    #     {'updates' => [
+    #       # Assigns peerIndex = 3 to this peerID
+    #       {'peerID' => 'asdfasdf', 'peerIndex' => 3, 'opCount' => 5},
+    #
+    #       # peerID can be omitted if peerIndex was previously assigned
+    #       {'peerID' => nil, 'peerIndex' => 2, 'opCount' => 42},
+    #       ...
+    #     ]}
+    def decode_clock_update(origin_peer_id, operation)
+      entries = operation['updates'].map do |entry|
+        subject_peer_id = entry['peerID'] ? bin_to_hex(entry['peerID']) : nil
+        PeerMatrix::PeerVClockEntry.new(subject_peer_id, entry['peerIndex'], entry['opCount'])
       end
+      PeerMatrix::ClockUpdate.new(entries)
+    end
+
+    # Encodes a CRDT::PeerMatrix::ClockUpdate operation for sending over the network.
+    def encode_clock_update(clock_update)
+      entries = clock_update.entries.map do |entry|
+        {
+          'peerID'    => entry.peer_id ? hex_to_bin(entry.peer_id) : nil,
+          'peerIndex' => entry.peer_index,
+          'opCount'   => entry.op_count
+        }
+      end
+      {'updates' => entries}
+    end
+
+    # Parses an OrderedListInsert message. It has the following structure:
+    #
+    #     {
+    #       # Identifies the list element to the left of the element being inserted (nil if head of list)
+    #       'referenceID' => {'logicalTS' => 123, 'peerIndex' => 3},
+    #
+    #       # New identifier of the element being inserted
+    #       'newID' => {'logicalTS' => 321, 'peerIndex' => 0},
+    #
+    #       # Value of the element being inserted
+    #       'value' => 'a'
+    #     }
+    def decode_list_insert(origin_peer_id, operation)
+      OrderedList::InsertOp.new(decode_item_id(origin_peer_id, operation['referenceID']),
+                                decode_item_id(origin_peer_id, operation['newID']),
+                                operation['value'])
+    end
+
+    # Encodes a CRDT::OrderedList::InsertOp operation for sending over the network.
+    def encode_list_insert(operation)
+      {
+        'referenceID' => encode_item_id(operation.reference_id),
+        'newID'       => encode_item_id(operation.new_id),
+        'value'       => operation.value
+      }
+    end
+
+    # Parses an OrderedListDelete message. It has the following structure:
+    #
+    #     {
+    #       # Identifies the list element being deleted
+    #       'deleteID' => {'logicalTS' => 123, 'peerIndex' => 3},
+    #
+    #       # Tombstone timestamp for the deletion
+    #       'deleteTS' => {'logicalTS' => 321, 'peerIndex' => 0}
+    #     }
+    def decode_list_delete(origin_peer_id, operation)
+      OrderedList::DeleteOp.new(decode_item_id(origin_peer_id, operation['deleteID']),
+                                decode_item_id(origin_peer_id, operation['deleteTS']))
+    end
+
+    # Encodes a CRDT::OrderedList::DeleteOp operation for sending over the network.
+    def encode_list_delete(operation)
+      {
+        'deleteID' => encode_item_id(operation.delete_id),
+        'deleteTS' => encode_item_id(operation.delete_ts)
+      }
+    end
+
+    # Translates an on-the-wire encoding of an ItemID (using a peer index) into an in-memory ItemID
+    # object (using a peer ID).
+    def decode_item_id(origin_peer_id, hash)
+      return nil if hash.nil?
+      peer_id = peer_matrix.remote_index_to_peer_id(origin_peer_id, hash['peerIndex'])
+      ItemID.new(hash['logicalTS'], peer_id)
+    end
+
+    # Translates an in-memory ItemID object (using a peer ID) into an on-the-wire encoding of an
+    # ItemID (using a peer index).
+    def encode_item_id(item_id)
+      return nil if item_id.nil?
+      {
+        'logicalTS' => item_id.logical_ts,
+        'peerIndex' => peer_matrix.peer_id_to_index(item_id.peer_id)
+      }
     end
 
     # Translates a binary string into a hex string
