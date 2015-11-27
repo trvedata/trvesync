@@ -44,7 +44,7 @@ RSpec.describe CRDT::Peer do
     expect(@msg2['operations']).to eq([{'updates' => [{
       'peerID'    => @msg1['origin'],
       'peerIndex' => 1,
-      'opCount'   => 1
+      'msgCount'  => 1
     }]}])
   end
 end

@@ -58,9 +58,9 @@
               doc: >-
                 Index of this peer in the sender PeerState's array of peers. This index will serve
                 as compact representation of the PeerID in subsequent updates from the same sender.
-            - name: opCount
+            - name: msgCount
               type: long
-              doc: Highest operation sequence number that the sender has seen from this peer.
+              doc: Highest message sequence number that the sender has seen from this peer.
 
 - name: OrderedListInsert
   type: record
@@ -97,12 +97,11 @@
     - name: origin
       type: PeerID
       doc: Globally unique identifier of the peer that sent this message.
-    - name: opCount
+    - name: msgCount
       type: long
       doc: >-
-        The current sequence number on the sender peer's operation counter (i.e. its own entry in
-        the vector clock). Subsequent operations are assumed to be consecutively numbered, starting
-        from this value. Including this number on every message acts as a check on the underlying
+        Message sequence number. The messages broadcast by each peer are numbered sequentially,
+        starting at 1. Including this number on every message acts as a check on the underlying
         transport (making sure that operations are not dropped, duplicated or reordered), and it
         allows detection of "forgetful" peers (which forget that they have already sent some
         message, or forget some change that was broadcast but not stored durably due to a crash).
@@ -185,13 +184,13 @@
                     - name: peerID
                       type: PeerID
                       doc: Globally unique identifier of the peer described in this record.
-                    - name: opCount
+                    - name: msgCount
                       type: long
                       default: 0
                       doc: >-
-                        The number of operations we have processed that originated on this peer. We
-                        expect operations from a given peer to have sequentially numbered operations
-                        (with no gaps in the sequence).
+                        The number of messages we have received that originated on this peer. We
+                        expect messages from a given peer to be sequentially numbered (with no gaps
+                        in the sequence).
     - name: data
       type: OrderedList
       doc: The actual data structure being maintained at this peer.

@@ -12,9 +12,9 @@ module CRDT
   class PeerMatrix
 
     # One entry in a vector clock. The +peer_id+ is the hex string representing a peer; the
-    # +peer_index+ is the number we have locally assigned to that peer; and +op_count+ is the number
-    # of operations we have seen from that peer.
-    PeerVClockEntry = Struct.new(:peer_id, :peer_index, :op_count)
+    # +peer_index+ is the number we have locally assigned to that peer; and +msg_count+ is the
+    # number of messages we have received from that peer.
+    PeerVClockEntry = Struct.new(:peer_id, :peer_index, :msg_count)
 
     # A clock update is a special kind of operation, which can be broadcast from one peer to other
     # peers. When a ClockUpdate is sent, it reflects the messages received by the sender (i.e. which
@@ -34,10 +34,10 @@ module CRDT
         @update_by_peer_id[peer_id] = PeerVClockEntry.new(peer_id, peer_index, 0)
       end
 
-      def record_update(peer_id, peer_index, op_count)
+      def record_update(peer_id, peer_index, msg_count)
         raise 'Cannot modify clock update from remote peer' if @entries
         @update_by_peer_id[peer_id] ||= PeerVClockEntry.new(nil, peer_index, 0)
-        @update_by_peer_id[peer_id].op_count = op_count
+        @update_by_peer_id[peer_id].msg_count = msg_count
       end
 
       def empty?
@@ -105,21 +105,6 @@ module CRDT
       index
     end
 
-    # For an incoming message from the given peer ID, check that the peer is set up in our local
-    # state, and that the operation counter lines up with what we were expecting.
-    def process_incoming_op_count(origin_peer_id, origin_op_count)
-      origin_index = peer_id_to_index(origin_peer_id)
-
-      # We normally expect the opCount for a peer to be monotonically increasing. However, there's
-      # a possible scenario in which a peer sends some messages and then crashes before writing its
-      # state to stable storage, so when it comes back up, it reverts back to a lower opCount.
-      # We should detect when this happens, and replay the lost messages from another peer.
-      entry = @matrix[0][origin_index]
-      raise "peerID mismatch: #{entry.peer_id} != #{origin_peer_id}" if entry.peer_id != origin_peer_id
-      raise "opCount for #{origin_peer_id} went backwards"  if entry.op_count > origin_op_count
-      raise "opCount for #{origin_peer_id} jumped forwards" if entry.op_count < origin_op_count
-    end
-
     # Processes a clock update from a remote peer and applies it to the local state. The update
     # indicates that +origin_peer_id+ has received various operations from other peers, and also
     # documents which peer indexes +origin_peer_id+ has assigned to those peers.
@@ -134,30 +119,37 @@ module CRDT
           raise 'New peer index assignment without ID' if new_entry.peer_id.nil?
           vclock[new_entry.peer_index] = new_entry
         else
-          raise 'Clock update went backwards' if old_entry.op_count > new_entry.op_count
-          old_entry.op_count = new_entry.op_count
+          raise 'Clock update went backwards' if old_entry.msg_count > new_entry.msg_count
+          old_entry.msg_count = new_entry.msg_count
         end
       end
     end
 
-    # Increments the operation counter for the local peer, indicates that an operation has been
-    # performed locally.
-    def local_operation
-      @matrix[0][0].op_count += 1
+    # Increments the message counter for the local peer, indicating that a message has been
+    # broadcast to other peers.
+    def increment_sent_messages
+      @matrix[0][0].msg_count += 1
     end
 
-    # Increments the operation counter for a particular peer, indicating that we have processed an
-    # operation that originated on that peer. In other words, this moves the vector clock forward.
-    def increment_op_count(origin_peer_id)
+    # Increments the message counter for a particular peer, indicating that we have processed a
+    # message that originated on that peer. In other words, this moves the vector clock forward.
+    def processed_incoming_msg(origin_peer_id, msg_count)
       origin_index = peer_id_to_index(origin_peer_id)
+      local_entry  = @matrix[0][origin_index]
+      remote_entry = @matrix[origin_index][0]
 
-      local_vclock_entry = @matrix[0][origin_index]
-      local_vclock_entry.op_count += 1
+      # We normally expect the msg_count for a peer to be monotonically increasing. However, there's
+      # a possible scenario in which a peer sends some messages and then crashes before writing its
+      # state to stable storage, so when it comes back up, it reverts back to a lower msg_count. We
+      # should detect when this happens, and replay the lost messages from another peer.
+      raise "peerID mismatch: #{local_entry.peer_id} != #{origin_peer_id}" if local_entry.peer_id != origin_peer_id
+      raise "msg_count for #{origin_peer_id} went backwards"  if local_entry.msg_count + 1 > msg_count
+      raise "msg_count for #{origin_peer_id} jumped forwards" if local_entry.msg_count + 1 < msg_count
 
-      remote_vclock_entry = @matrix[origin_index][0]
-      remote_vclock_entry.op_count += 1
+      local_entry.msg_count = msg_count
+      remote_entry.msg_count = msg_count
 
-      local_clock_update.record_update(origin_peer_id, origin_index, local_vclock_entry.op_count)
+      local_clock_update.record_update(origin_peer_id, origin_index, msg_count)
     end
 
     # Returns true if operations originating on the given peer ID are ready to be delivered to the
@@ -168,10 +160,10 @@ module CRDT
     # order as they were sent.
     def causally_ready?(remote_peer_id)
       local = @matrix[0].each_with_object(Hash.new(0)) do |entry, vclock|
-        vclock[entry.peer_id] = entry.op_count
+        vclock[entry.peer_id] = entry.msg_count
       end
       remote = @matrix[peer_id_to_index(remote_peer_id)].each_with_object(Hash.new(0)) do |entry, vclock|
-        vclock[entry.peer_id] = entry.op_count
+        vclock[entry.peer_id] = entry.msg_count
       end
 
       (local.keys | remote.keys).all? do |peer_id|

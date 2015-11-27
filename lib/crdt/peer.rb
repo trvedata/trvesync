@@ -20,6 +20,12 @@ module CRDT
   class Peer
     include Encoding
 
+    # A message is the unit at which a peer broadcasts information to other peers.
+    Message = Struct.new(:origin_peer_id, :msg_count, :operations)
+
+    # Pseudo-operation, used to signal that all operations within a message have been processed.
+    MessageProcessed = Struct.new(:msg_count)
+
     # 256-bit hex string that uniquely identifies this peer.
     attr_reader :peer_id
 
@@ -48,15 +54,19 @@ module CRDT
       @recv_buf = {} # map of origin_peer_id => array of operations
     end
 
+    # Returns true if this peer has buffered information that should be broadcast to other peers.
     def anything_to_send?
       !@peer_matrix.local_clock_update.empty? || !@send_buf.empty?
     end
 
+    # Generates a new unique ItemID for use within the CRDT.
     def next_id
       @logical_ts += 1
       ItemID.new(@logical_ts, peer_id)
     end
 
+    # Called by the CRDT to enqueue an operation to be broadcast to other peers. Does not send the
+    # operation immediately, just puts it in a buffer.
     def send_operation(operation)
       # Record causal dependencies of the operation before the operation itself
       if !peer_matrix.local_clock_update.empty?
@@ -65,27 +75,27 @@ module CRDT
       end
 
       @send_buf << operation
-      @peer_matrix.local_operation
     end
 
-    # Returns a list of operations that should be sent to remote peers.
-    # Resets the list, so the same operations won't be returned again.
-    def flush_operations
+    # Returns a message that should be sent to remote peers. Resets the buffer of pending
+    # operations, so the same operations won't be returned again.
+    def make_message
       if !peer_matrix.local_clock_update.empty?
         @send_buf << peer_matrix.local_clock_update
         peer_matrix.reset_clock_update
       end
 
-      return_ops = @send_buf
+      message = Message.new(peer_id, peer_matrix.increment_sent_messages, @send_buf)
       @send_buf = []
-      return_ops
+      message
     end
 
-    # Receives operations from a remote peer. The operations will be applied immediately if they are
+    # Receives a message from a remote peer. The operations will be applied immediately if they are
     # causally ready, or buffered until later if dependencies are missing.
-    def receive_operations(origin_peer_id, operations)
-      @recv_buf[origin_peer_id] ||= []
-      @recv_buf[origin_peer_id].concat(operations)
+    def process_message(message)
+      @recv_buf[message.origin_peer_id] ||= []
+      @recv_buf[message.origin_peer_id].concat(message.operations)
+      @recv_buf[message.origin_peer_id] << MessageProcessed.new(message.msg_count)
       while apply_operations_if_ready; end
     end
 
@@ -110,20 +120,17 @@ module CRDT
           # Applying the clock update might make the following operations causally non-ready, so we
           # stop processing operations from this peer and check again for causal readiness.
           return true
+
+        elsif operation.is_a? MessageProcessed
+          peer_matrix.processed_incoming_msg(ready_peer_id, operation.msg_count)
+
         else
-          apply_operation(ready_peer_id, operation)
+          @logical_ts = operation.logical_ts if @logical_ts < operation.logical_ts
+          ordered_list.apply_operation(operation)
         end
       end
 
       true # Finished this peer, now another peer's operations might be causally ready
-    end
-
-    # Takes a single operation that we received from a remote peer, and applies it to the local
-    # CRDT data structure.
-    def apply_operation(origin_peer_id, operation)
-      @logical_ts = operation.logical_ts if @logical_ts < operation.logical_ts
-      peer_matrix.increment_op_count(origin_peer_id)
-      ordered_list.apply_operation(operation)
     end
   end
 end

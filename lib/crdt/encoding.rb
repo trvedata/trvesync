@@ -67,7 +67,7 @@ module CRDT
         peer_list[peer_index] = {
           'peerID' => hex_to_bin(peer_id),
           'vclock' => peer_matrix.matrix[peer_index].map {|entry|
-            {'peerID' => hex_to_bin(entry.peer_id), 'opCount' => entry.op_count}
+            {'peerID' => hex_to_bin(entry.peer_id), 'msgCount' => entry.msg_count}
           }
         }
       end
@@ -85,7 +85,7 @@ module CRDT
         entries = []
         peer['vclock'].each_with_index do |entry, entry_index|
           entries << PeerMatrix::PeerVClockEntry.new(
-            bin_to_hex(entry['peerID']), entry_index, entry['opCount'])
+            bin_to_hex(entry['peerID']), entry_index, entry['msgCount'])
         end
         peer_matrix.apply_clock_update(origin_peer_id, PeerMatrix::ClockUpdate.new(entries))
       end
@@ -94,7 +94,9 @@ module CRDT
     # Takes all accumulated changes since the last call to #encode_message, and returns them as an
     # Avro-encoded byte string that should be broadcast to all peers.
     def encode_message
-      operations = flush_operations.map do |operation|
+      message = make_message
+
+      operations = message.operations.map do |operation|
         case operation
         when PeerMatrix::ClockUpdate then encode_clock_update(operation)
         when OrderedList::InsertOp   then encode_list_insert(operation)
@@ -102,14 +104,14 @@ module CRDT
         end
       end
 
-      message = {
-        'origin'     => hex_to_bin(peer_id),
-        'opCount'    => peer_matrix.matrix[0][0].op_count - operations.size,
+      message_hash = {
+        'origin'     => hex_to_bin(message.origin_peer_id),
+        'msgCount'   => message.msg_count,
         'operations' => operations
       }
 
       encoder = Avro::IO::BinaryEncoder.new(StringIO.new)
-      Avro::IO::DatumWriter.new(MESSAGE_SCHEMA).write(message, encoder)
+      Avro::IO::DatumWriter.new(MESSAGE_SCHEMA).write(message_hash, encoder)
       encoder.writer.string
     end
 
@@ -121,11 +123,10 @@ module CRDT
       message = reader.read(decoder)
 
       origin_peer_id = bin_to_hex(message['origin'])
-      peer_matrix.process_incoming_op_count(origin_peer_id, message['opCount'])
       operations = []
 
       message['operations'].each do |operation|
-        if operation['opCount'] # ClockUpdate message
+        if operation['msgCount'] # ClockUpdate message
           operations << decode_clock_update(origin_peer_id, operation)
         elsif operation['newID'] # OrderedListInsert message
           operations << decode_list_insert(origin_peer_id, operation)
@@ -136,23 +137,23 @@ module CRDT
         end
       end
 
-      receive_operations(origin_peer_id, operations) unless operations.empty?
+      process_message(Peer::Message.new(origin_peer_id, message['msgCount'], operations))
     end
 
     # Decodes a ClockUpdate message from a remote peer. It has the following structure:
     #
     #     {'updates' => [
     #       # Assigns peerIndex = 3 to this peerID
-    #       {'peerID' => 'asdfasdf', 'peerIndex' => 3, 'opCount' => 5},
+    #       {'peerID' => 'asdfasdf', 'peerIndex' => 3, 'msgCount' => 5},
     #
     #       # peerID can be omitted if peerIndex was previously assigned
-    #       {'peerID' => nil, 'peerIndex' => 2, 'opCount' => 42},
+    #       {'peerID' => nil, 'peerIndex' => 2, 'msgCount' => 42},
     #       ...
     #     ]}
     def decode_clock_update(origin_peer_id, operation)
       entries = operation['updates'].map do |entry|
         subject_peer_id = entry['peerID'] ? bin_to_hex(entry['peerID']) : nil
-        PeerMatrix::PeerVClockEntry.new(subject_peer_id, entry['peerIndex'], entry['opCount'])
+        PeerMatrix::PeerVClockEntry.new(subject_peer_id, entry['peerIndex'], entry['msgCount'])
       end
       PeerMatrix::ClockUpdate.new(entries)
     end
@@ -163,7 +164,7 @@ module CRDT
         {
           'peerID'    => entry.peer_id ? hex_to_bin(entry.peer_id) : nil,
           'peerIndex' => entry.peer_index,
-          'opCount'   => entry.op_count
+          'msgCount'  => entry.msg_count
         }
       end
       {'updates' => entries}
