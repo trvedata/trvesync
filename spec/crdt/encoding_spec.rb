@@ -1,4 +1,5 @@
 require 'crdt'
+require 'tempfile'
 
 RSpec.describe CRDT::Encoding do
   def new_tempfile
@@ -34,7 +35,36 @@ RSpec.describe CRDT::Encoding do
       expect(reloaded.ordered_list.to_a.join).to eq 'bcd'
     end
 
-    it 'should save and reload the peer matrix'
+    it 'should preserve tombstones' do
+      peer1, peer2 = CRDT::Peer.new, CRDT::Peer.new
+      peer1.ordered_list.insert(0, 'a').insert(1, 'b')
+      peer2.process_message(peer1.make_message)
+      peer2.ordered_list.insert(2, 'c')
+      peer1.ordered_list.delete(1)
+      peer2.process_message(peer1.make_message)
+      expect(peer2.ordered_list.to_a).to eq ['a', 'c']
+
+      peer1.save(new_tempfile)
+      peer1 = CRDT::Peer.load(@tempfiles.first.path)
+      peer1.process_message(peer2.make_message)
+      expect(peer1.ordered_list.to_a).to eq ['a', 'c']
+    end
+
+    it 'should save and reload the peer matrix' do
+      peer1, peer2 = CRDT::Peer.new, CRDT::Peer.new
+      peer1.ordered_list.insert(0, 'a')
+      peer2.process_message(peer1.make_message)
+      expect(peer2.peer_matrix.peer_id_to_index(peer2.peer_id)).to eq 0
+      expect(peer2.peer_matrix.peer_id_to_index(peer1.peer_id)).to eq 1
+
+      peer2.save(new_tempfile)
+      peer2 = CRDT::Peer.load(@tempfiles.first.path)
+
+      expect(peer2.peer_matrix.peer_id_to_index(peer2.peer_id)).to eq 0
+      expect(peer2.peer_matrix.peer_id_to_index(peer1.peer_id)).to eq 1
+    end
+
+    it 'should save and reload the Lamport clock'
     it 'should save and reload message buffers'
   end
 

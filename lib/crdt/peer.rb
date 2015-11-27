@@ -36,7 +36,7 @@ module CRDT
     attr_reader :ordered_list
 
     # Lamport clock
-    attr_reader :logical_ts
+    attr_accessor :logical_ts
 
     # Loads a peer's state from a file with the specified +filename+ path.
     def self.load(filename)

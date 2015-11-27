@@ -47,8 +47,8 @@ module CRDT
     # +PeerState+ schema.
     def to_avro_hash
       {
-        'logicalTS' => 0,
-        'peers' => matrix_to_peer_list,
+        'logicalTS' => logical_ts,
+        'peers' => encode_peer_matrix,
         'data' => encode_ordered_list
       }
     end
@@ -56,13 +56,49 @@ module CRDT
     # Loads the state of this peer from a structure of nested hashes and lists, according to the
     # +PeerState+ schema.
     def from_avro_hash(state)
-      peer_list_to_matrix(state['peers'])
+      self.logical_ts = state['logicalTS']
+      decode_peer_matrix(state['peers'])
       decode_ordered_list(state['data'])
+    end
+
+    # Parses an array of PeerEntry records, as decoded from Avro, and applies them to a PeerMatrix
+    # object. Assumes the matrix is previously empty. The input has the following structure:
+    #
+    #     [
+    #       {
+    #         'peerID' => 'asdfasdf'
+    #         'vclock' => [
+    #           {
+    #             'peerID' => 'asdfasdf',
+    #             'msgCount' => 42
+    #           },
+    #           ...
+    #         ]
+    #       },
+    #       ...
+    #     ]
+    def decode_peer_matrix(peer_list)
+      peer_list.each_with_index do |peer, index|
+        origin_peer_id = bin_to_hex(peer['peerID'])
+        assigned_index = peer_matrix.peer_id_to_index(origin_peer_id)
+        raise "Index mismatch: #{index} != #{assigned_index}" if index != assigned_index
+      end
+
+      peer_list.each do |peer|
+        origin_peer_id = bin_to_hex(peer['peerID'])
+        entries = []
+
+        peer['vclock'].each_with_index do |entry, entry_index|
+          entries << PeerMatrix::PeerVClockEntry.new(
+            bin_to_hex(entry['peerID']), entry_index, entry['msgCount'])
+        end
+        peer_matrix.apply_clock_update(origin_peer_id, PeerMatrix::ClockUpdate.new(entries))
+      end
     end
 
     # Transforms a PeerMatrix object into a structure corresponding to an array of PeerEntry
     # records, for encoding to Avro.
-    def matrix_to_peer_list
+    def encode_peer_matrix
       peer_list = []
       peer_matrix.index_by_peer_id.each do |peer_id, peer_index|
         peer_list[peer_index] = {
@@ -73,23 +109,6 @@ module CRDT
         }
       end
       peer_list
-    end
-
-    # Parses an array of PeerEntry records, as decoded from Avro, and applies them to a PeerMatrix
-    # object. Assumes the matrix is previously empty.
-    def peer_list_to_matrix(peer_list)
-      peer_list.each_with_index do |peer, index|
-        origin_peer_id = bin_to_hex(peer['peerID'])
-        assigned_index = peer_matrix.peer_id_to_index(origin_peer_id)
-        raise "Index mismatch: #{index} != #{assigned_index}" if index != assigned_index
-
-        entries = []
-        peer['vclock'].each_with_index do |entry, entry_index|
-          entries << PeerMatrix::PeerVClockEntry.new(
-            bin_to_hex(entry['peerID']), entry_index, entry['msgCount'])
-        end
-        peer_matrix.apply_clock_update(origin_peer_id, PeerMatrix::ClockUpdate.new(entries))
-      end
     end
 
     # Parses an Avro OrderedList record, and applies them to the current peer's data structure.
