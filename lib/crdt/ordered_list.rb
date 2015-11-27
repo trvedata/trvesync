@@ -83,6 +83,33 @@ module CRDT
       end
     end
 
+    # Bulk loads an array of Item records (used to reload the data structure from disk).
+    def load_items(items)
+      if @head || @tail || !@items_by_id.empty?
+        raise 'Cannot load into list that already contains data'
+      end
+
+      (0...items.size).each do |i|
+        items[i].previous = items[i - 1] if i > 0
+        items[i].next     = items[i + 1] if i < items.size - 1
+        @items_by_id[items[i].insert_id] = items[i]
+      end
+
+      @head = items.first
+      @tail = items.last
+    end
+
+    # Returns an array of Item records (used to save the data structure to disk).
+    def dump_items
+      items = []
+      item = @head
+      while item
+        items << item
+        item = item.next
+      end
+      items
+    end
+
     private
 
     # Inserts a new list item to the right of the item identified by +left_id+.

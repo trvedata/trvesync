@@ -49,7 +49,7 @@ module CRDT
       {
         'logicalTS' => 0,
         'peers' => matrix_to_peer_list,
-        'data' => {'items' => []}
+        'data' => encode_ordered_list
       }
     end
 
@@ -57,6 +57,7 @@ module CRDT
     # +PeerState+ schema.
     def from_avro_hash(state)
       peer_list_to_matrix(state['peers'])
+      decode_ordered_list(state['data'])
     end
 
     # Transforms a PeerMatrix object into a structure corresponding to an array of PeerEntry
@@ -89,6 +90,44 @@ module CRDT
         end
         peer_matrix.apply_clock_update(origin_peer_id, PeerMatrix::ClockUpdate.new(entries))
       end
+    end
+
+    # Parses an Avro OrderedList record, and applies them to the current peer's data structure.
+    # It has the following structure:
+    #
+    #     {'items' => [
+    #       {
+    #         # Uniquely identifies this list element
+    #         'id' => {'logicalTS' => 123, 'peerIndex' => 3},
+    #
+    #         # Value of the element (nil if the item has been deleted)
+    #         'value' => 'a'
+    #
+    #         # Tombstone timestamp if the item has been deleted (nil if it has not been deleted)
+    #         'deleteTS' => {'logicalTS' => 321, 'peerIndex' => 0}
+    #       },
+    #       ...
+    #     ]}
+    def decode_ordered_list(hash)
+      items = hash['items'].map do |item|
+        insert_id = decode_item_id(peer_id, item['id'])
+        delete_ts = decode_item_id(peer_id, item['deleteTS'])
+        OrderedList::Item.new(insert_id, delete_ts, item['value'], nil, nil)
+      end
+      ordered_list.load_items(items)
+    end
+
+    # Transforms a CRDT::OrderedList object into a structure corresponding to the Avro OrderedList
+    # record schema.
+    def encode_ordered_list
+      items = ordered_list.dump_items.map do |item|
+        {
+          'id'       => encode_item_id(item.insert_id),
+          'value'    => item.value,
+          'deleteTS' => encode_item_id(item.delete_ts)
+        }
+      end
+      {'items' => items}
     end
 
     # Takes all accumulated changes since the last call to #encode_message, and returns them as an
