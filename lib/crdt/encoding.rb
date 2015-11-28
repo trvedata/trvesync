@@ -179,17 +179,15 @@ module CRDT
       decoder = Avro::IO::BinaryDecoder.new(serialized)
       reader = Avro::IO::DatumReader.new(MESSAGE_SCHEMA)
       message = reader.read(decoder)
-
       origin_peer_id = bin_to_hex(message['origin'])
-      operations = []
 
-      message['operations'].each do |operation|
-        if operation['msgCount'] # ClockUpdate message
-          operations << decode_clock_update(origin_peer_id, operation)
+      operations = message['operations'].map do |operation|
+        if operation['updates'] # ClockUpdate message
+          decode_clock_update(origin_peer_id, operation)
         elsif operation['newID'] # OrderedListInsert message
-          operations << decode_list_insert(origin_peer_id, operation)
+          decode_list_insert(origin_peer_id, operation)
         elsif operation['deleteID'] # OrderedListDelete message
-          operations << decode_list_delete(origin_peer_id, operation)
+          decode_list_delete(origin_peer_id, operation)
         else
           raise "Unexpected operation type: #{operation.inspect}"
         end
@@ -211,8 +209,15 @@ module CRDT
     def decode_clock_update(origin_peer_id, operation)
       entries = operation['updates'].map do |entry|
         subject_peer_id = entry['peerID'] ? bin_to_hex(entry['peerID']) : nil
+
+        # Need to register the peer index mapping right now, even though we don't apply the clock
+        # update until later, because the peer index mapping may be needed to decode subsequent
+        # operations.
+        peer_matrix.peer_index_mapping(origin_peer_id, subject_peer_id, entry['peerIndex'])
+
         PeerMatrix::PeerVClockEntry.new(subject_peer_id, entry['peerIndex'], entry['msgCount'])
       end
+
       PeerMatrix::ClockUpdate.new(entries)
     end
 

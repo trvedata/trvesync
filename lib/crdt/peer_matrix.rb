@@ -82,7 +82,7 @@ module CRDT
     # is globally unique).
     def remote_index_to_peer_id(origin_peer_id, remote_peer_index)
       entry = @matrix[peer_id_to_index(origin_peer_id)][remote_peer_index]
-      entry && entry.peer_id
+      entry && entry.peer_id or raise "No peer ID for index #{remote_peer_index}"
     end
 
     # Translates a globally unique peer ID into a local peer index. If the peer ID is not already
@@ -105,23 +105,32 @@ module CRDT
       index
     end
 
+    # Indicates that the peer +origin_peer_id+ has assigned an index of +subject_peer_index+ to the
+    # peer +subject_peer_id+. Calling this method registers the mapping, so that subsequent calls to
+    # +remote_index_to_peer_id+ can resolve the index. Returns the appropriate PeerVClockEntry.
+    def peer_index_mapping(origin_peer_id, subject_peer_id, subject_peer_index)
+      vclock = @matrix[peer_id_to_index(origin_peer_id)]
+      entry = vclock[subject_peer_index]
+
+      if entry
+        raise 'Contradictory peer index assignment' if subject_peer_id && subject_peer_id != entry.peer_id
+        entry
+      else
+        raise 'Non-consecutive peer index assignment' if subject_peer_index != vclock.size
+        raise 'New peer index assignment without ID' if subject_peer_id.nil?
+        entry = PeerVClockEntry.new(subject_peer_id, subject_peer_index, 0)
+        vclock[subject_peer_index] = entry
+      end
+    end
+
     # Processes a clock update from a remote peer and applies it to the local state. The update
     # indicates that +origin_peer_id+ has received various operations from other peers, and also
     # documents which peer indexes +origin_peer_id+ has assigned to those peers.
     def apply_clock_update(origin_peer_id, update)
-      vclock = @matrix[peer_id_to_index(origin_peer_id)]
-
       update.entries.each do |new_entry|
-        old_entry = vclock[new_entry.peer_index]
-
-        if old_entry.nil?
-          raise 'Non-consecutive peer index assignment' if new_entry.peer_index != vclock.size
-          raise 'New peer index assignment without ID' if new_entry.peer_id.nil?
-          vclock[new_entry.peer_index] = new_entry
-        else
-          raise 'Clock update went backwards' if old_entry.msg_count > new_entry.msg_count
-          old_entry.msg_count = new_entry.msg_count
-        end
+        old_entry = peer_index_mapping(origin_peer_id, new_entry.peer_id, new_entry.peer_index)
+        raise 'Clock update went backwards' if old_entry.msg_count > new_entry.msg_count
+        old_entry.msg_count = new_entry.msg_count
       end
     end
 
