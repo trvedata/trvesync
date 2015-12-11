@@ -46,6 +46,14 @@ module CRDT
       end
     end
 
+    def each_item(&block)
+      item = @head
+      while item
+        yield item
+        item = item.next
+      end
+    end
+
     # Inserts a new item at the given +index+ in the list (local operation).
     # An index of 0 inserts at the head of the list; index out of bounds appends at the end.
     def insert(index, value)
@@ -58,6 +66,23 @@ module CRDT
                         item.insert_id, item.value)
       @peer.send_operation(op)
       self
+    end
+
+    # Inserts a new item before the existing item identified by +cursor_id+ (local operation).
+    # If +cursor_id+ is nil, appends to the end of the list.
+    def insert_before_id(cursor_id, value)
+      if cursor_id.nil?
+        left_id = @tail && @tail.insert_id
+      else
+        right_item = @items_by_id[cursor_id] or raise IndexError
+        left_id = right_item.previous.insert_id
+      end
+
+      item = insert_after_id(left_id, @peer.next_id, value)
+      op = InsertOp.new(item.previous && item.previous.insert_id,
+                        item.insert_id, item.value)
+      @peer.send_operation(op)
+      item.insert_id
     end
 
     # Deletes the item at the given +index+ in the list (local operation).

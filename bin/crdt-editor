@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+require 'crdt'
+require 'crdt/editor'
+
+CRDT::Editor.new(CRDT::Peer.new).run

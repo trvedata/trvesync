@@ -3,7 +3,10 @@ GEM
   specs:
     avro (1.7.7)
       multi_json
+    curses (1.0.1)
     diff-lcs (1.2.5)
+    dispel (0.0.7)
+      curses
     multi_json (1.11.2)
     rspec (3.3.0)
       rspec-core (~> 3.3.0)
@@ -24,4 +27,5 @@ PLATFORMS
 
 DEPENDENCIES
   avro
+  dispel
   rspec
