@@ -42,12 +42,13 @@ module CRDT
 
       @peer.ordered_list.each_item do |item|
         if item.insert_id == @cursor_id
-          @cursor = [@lines.size - 1, @lines.last.size]
+          @cursor = [@item_ids.last.size, @item_ids.size - 1]
         end
 
         if item.delete_ts.nil?
           if item.value == "\n"
             @lines << ''
+            @item_ids.last << item.insert_id
             @item_ids << []
             word_boundary = 0
           else
@@ -69,13 +70,18 @@ module CRDT
                 @item_ids << @item_ids.last.slice!(word_boundary, word_len) || []
               end
               word_boundary = 0
+
+              if @item_ids.last.include? @cursor_id
+                @cursor = [@item_ids.last.index(@cursor_id), @item_ids.size - 1]
+              end
             end
           end
         end
       end
 
-      @cursor = [@lines.size - 1, @lines.last.size] if @cursor_id.nil?
-      screen.draw(@lines.join("\n"), [], @cursor)
+      @item_ids.last << nil # insertion point for appending at the end
+      @cursor = [@item_ids.last.size - 1, @item_ids.size - 1] if @cursor_id.nil?
+      screen.draw(@lines.join("\n"), [], @cursor.reverse)
     end
 
     def key_pressed(key)
@@ -85,16 +91,13 @@ module CRDT
       when :"Ctrl+c" then :quit
 
       # moving cursor
-      when :left                   then move_cursor :relative, -1,  0
-      when :right                  then move_cursor :relative,  1,  0
-      when :up                     then move_cursor :relative,  0, -1
-      when :down                   then move_cursor :relative,  0,  1
-      when :page_up                then move_cursor :page_up
-      when :page_down              then move_cursor :page_down
-      when :"Ctrl+left",  :"Alt+b" then move_cursor :word_left
-      when :"Ctrl+right", :"Alt+f" then move_cursor :word_right
-      when :home, :"Ctrl+a"        then move_cursor :line_begin
-      when :end,  :"Ctrl+e"        then move_cursor :line_end
+      when :left, :right, :up, :down then move_cursor key
+      when :page_up                  then move_cursor :page_up
+      when :page_down                then move_cursor :page_down
+      when :"Ctrl+left",  :"Alt+b"   then move_cursor :word_left
+      when :"Ctrl+right", :"Alt+f"   then move_cursor :word_right
+      when :home, :"Ctrl+a"          then move_cursor :line_begin
+      when :end,  :"Ctrl+e"          then move_cursor :line_end
 
       # editing text
       when :tab       then insert("\t")
@@ -106,8 +109,48 @@ module CRDT
       end
     end
 
-    def move_cursor(command, horizontal, vertical)
-      # TODO
+    def move_cursor(command)
+      case command
+      when :left
+        if @cursor[0] > 0
+          @cursor = [@cursor[0] - 1, @cursor[1]]
+        elsif @cursor[1] > 0
+          @cursor[1] -= 1
+          @cursor[0] = end_of_line
+        end
+
+      when :right
+        if @cursor[0] < end_of_line
+          @cursor = [@cursor[0] + 1, @cursor[1]]
+        elsif @cursor[1] < @item_ids.size - 1
+          @cursor = [0, @cursor[1] + 1]
+        end
+
+      when :up
+        if @cursor[1] > 0
+          @cursor[1] -= 1
+          @cursor[0] = [@cursor[0], end_of_line].min
+        else
+          @cursor[0] = 0
+        end
+
+      when :down
+        if @cursor[1] < @item_ids.size - 1
+          @cursor[1] += 1
+          @cursor[0] = [@cursor[0], end_of_line].min
+        else
+          @cursor[0] = end_of_line
+        end
+
+      when :line_begin then @cursor[0] = 0
+      when :line_end   then @cursor[0] = end_of_line
+      end
+
+      @cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+    end
+
+    def end_of_line
+      @item_ids[@cursor[1]].size - 1
     end
 
     # Insert a character at the current cursor position
