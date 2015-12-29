@@ -28,6 +28,7 @@ module CRDT
           end
 
           render(screen)
+          @cursor_x = @cursor[0] if result == :insert || result == :delete
         end
       end
     end
@@ -118,6 +119,7 @@ module CRDT
           @cursor[1] -= 1
           @cursor[0] = end_of_line
         end
+        @cursor_x = @cursor[0]
 
       when :right
         if @cursor[0] < end_of_line
@@ -125,25 +127,26 @@ module CRDT
         elsif @cursor[1] < @item_ids.size - 1
           @cursor = [0, @cursor[1] + 1]
         end
+        @cursor_x = @cursor[0]
 
       when :up
         if @cursor[1] > 0
           @cursor[1] -= 1
-          @cursor[0] = [@cursor[0], end_of_line].min
+          @cursor[0] = [[@cursor[0], @cursor_x].max, end_of_line].min
         else
-          @cursor[0] = 0
+          @cursor[0] = @cursor_x = 0
         end
 
       when :down
         if @cursor[1] < @item_ids.size - 1
           @cursor[1] += 1
-          @cursor[0] = [@cursor[0], end_of_line].min
+          @cursor[0] = [[@cursor[0], @cursor_x].max, end_of_line].min
         else
-          @cursor[0] = end_of_line
+          @cursor[0] = @cursor_x = end_of_line
         end
 
-      when :line_begin then @cursor[0] = 0
-      when :line_end   then @cursor[0] = end_of_line
+      when :line_begin then @cursor[0] = @cursor_x = 0
+      when :line_end   then @cursor[0] = @cursor_x = end_of_line
       end
 
       @cursor_id = @item_ids[@cursor[1]][@cursor[0]]
@@ -156,10 +159,12 @@ module CRDT
     # Insert a character at the current cursor position
     def insert(char)
       @peer.ordered_list.insert_before_id(@cursor_id, char)
+      :insert
     end
 
     def delete(num_chars)
       # TODO
+      :delete
     end
 
     def resize(columns, lines)
