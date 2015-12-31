@@ -75,7 +75,7 @@ module CRDT
         left_id = @tail && @tail.insert_id
       else
         right_item = @items_by_id[cursor_id] or raise IndexError
-        left_id = right_item.previous.insert_id
+        left_id = right_item.previous && right_item.previous.insert_id
       end
 
       item = insert_after_id(left_id, @peer.next_id, value)
@@ -92,6 +92,52 @@ module CRDT
       item.value = nil
       @peer.send_operation(DeleteOp.new(item.insert_id, item.delete_ts))
       self
+    end
+
+    # Deletes +num_items+ items from the list (local operation). The items to be deleted are to the
+    # left of the item identified by +cursor_id+ (not including the item identified by +cursor_id+
+    # itself). If +cursor_id+ is nil, deletes +num_items+ from the end of the list. Returns the ID
+    # of the last non-deleted item before the sequence of deleted items.
+    def delete_before_id(cursor_id, num_items)
+      if cursor_id.nil?
+        item = @tail
+      else
+        cursor = @items_by_id[cursor_id] or raise IndexError
+        item = cursor.previous
+      end
+
+      while item && (num_items > 0 || item.delete_ts)
+        if item.delete_ts.nil?
+          item.delete_ts = @peer.next_id
+          item.value = nil
+          @peer.send_operation(DeleteOp.new(item.insert_id, item.delete_ts))
+          num_items -= 1
+        end
+
+        item = item.previous
+      end
+
+      item && item.insert_id
+    end
+
+    # Deletes +num_items+ items from the list (local operation). The item identified by +cursor_id+
+    # is the first item to be deleted, and the other deleted items are on its right. Returns the ID
+    # of the first non-deleted item after the sequence of deleted items.
+    def delete_after_id(cursor_id, num_items)
+      item = @items_by_id[cursor_id] or raise IndexError
+
+      while item && (num_items > 0 || item.delete_ts)
+        if item.delete_ts.nil?
+          item.delete_ts = @peer.next_id
+          item.value = nil
+          @peer.send_operation(DeleteOp.new(item.insert_id, item.delete_ts))
+          num_items -= 1
+        end
+
+        item = item.next
+      end
+
+      item && item.insert_id
     end
 
     # Applies a remote operation to a local copy of the data structure.

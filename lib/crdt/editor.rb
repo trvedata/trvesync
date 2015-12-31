@@ -162,8 +162,13 @@ module CRDT
       :insert
     end
 
+    # Delete characters before (negative) or after (positive) the current cursor position
     def delete(num_chars)
-      # TODO
+      if num_chars < 0
+        @peer.ordered_list.delete_before_id(@cursor_id, -num_chars)
+      elsif @cursor_id
+        @cursor_id = @peer.ordered_list.delete_after_id(@cursor_id, num_chars)
+      end
       :delete
     end
 

@@ -20,6 +20,73 @@ RSpec.describe CRDT::OrderedList do
     end
   end
 
+  context 'cursor editing' do
+    before :each do
+      @peer = CRDT::Peer.new(:peer1)
+      @ids = [:a, :b, :c, :d, :e, :f].map {|item| @peer.ordered_list.insert_before_id(nil, item) }
+    end
+
+    it 'should allow insertion at a cursor position' do
+      expect(@ids.first).to be_a(CRDT::ItemID)
+      expect { @peer.ordered_list.insert_before_id(@ids[2], :x) }
+        .to change { @peer.ordered_list.to_a }
+        .from([:a, :b, :c, :d, :e, :f])
+        .to([:a, :b, :x, :c, :d, :e, :f])
+    end
+
+    it 'should allow isnertion at the head' do
+      expect { @peer.ordered_list.insert_before_id(@ids[0], :x) }
+        .to change { @peer.ordered_list.to_a }
+        .from([:a, :b, :c, :d, :e, :f])
+        .to([:x, :a, :b, :c, :d, :e, :f])
+    end
+
+    it 'should allow deleting items before a cursor' do
+      expect { @peer.ordered_list.delete_before_id(@ids[4], 2) }
+        .to change { @peer.ordered_list.to_a }
+        .from([:a, :b, :c, :d, :e, :f])
+        .to([:a, :b, :e, :f])
+    end
+
+    it 'should allow deleting items after a cursor' do
+      expect { @peer.ordered_list.delete_after_id(@ids[2], 2) }
+        .to change { @peer.ordered_list.to_a }
+        .from([:a, :b, :c, :d, :e, :f])
+        .to([:a, :b, :e, :f])
+    end
+
+    it 'should allow deleting items from the tail' do
+      expect { @peer.ordered_list.delete_before_id(nil, 1) }
+        .to change { @peer.ordered_list.to_a }
+        .from([:a, :b, :c, :d, :e, :f])
+        .to([:a, :b, :c, :d, :e])
+    end
+
+    it 'should ignore deletes overrunning the head' do
+      expect(@peer.ordered_list.delete_before_id(@ids[2], 4)).to be_nil
+      expect(@peer.ordered_list.to_a).to eq [:c, :d, :e, :f]
+    end
+
+    it 'should ignore deletes overrunning the tail' do
+      expect(@peer.ordered_list.delete_after_id(@ids[4], 4)).to be_nil
+      expect(@peer.ordered_list.to_a).to eq [:a, :b, :c, :d]
+    end
+
+    it 'should skip over tombstones while deleting backwards' do
+      expect(@peer.ordered_list.delete_after_id(@ids[2], 1)).to eq @ids[3]
+      expect(@peer.ordered_list.delete_after_id(@ids[4], 1)).to eq @ids[5]
+      expect(@peer.ordered_list.delete_before_id(@ids[5], 2)).to eq @ids[0]
+      expect(@peer.ordered_list.to_a).to eq [:a, :f]
+    end
+
+    it 'should skip over tombstones while deleting forwards' do
+      expect(@peer.ordered_list.delete_before_id(@ids[3], 1)).to eq @ids[1]
+      expect(@peer.ordered_list.delete_before_id(@ids[5], 1)).to eq @ids[3]
+      expect(@peer.ordered_list.delete_after_id(@ids[1], 2)).to eq @ids[5]
+      expect(@peer.ordered_list.to_a).to eq [:a, :f]
+    end
+  end
+
   context 'generating operations' do
     it 'should be empty by default' do
       peer = CRDT::Peer.new(:peer1)
