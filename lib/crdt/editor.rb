@@ -12,30 +12,26 @@ module CRDT
       @cursor_id = nil
     end
 
-    # Draw app and redraw after each keystroke (or paste)
+    # Draw app and redraw after each keystroke
     def run
       Dispel::Screen.open(@options) do |screen|
         resize(screen.columns, screen.lines)
         render(screen)
 
         Dispel::Keyboard.output do |key|
-          screen.debug_key(key) if @options[:debug_keys]
-          if key == :resize
-            resize(screen.columns, screen.lines)
-          else
-            result = key_pressed(key)
-            break if result == :quit
-          end
-
-          render(screen)
-          @cursor_x = @cursor[0] if result == :insert || result == :delete
+          break if key_pressed(key, screen) == :quit
         end
       end
     end
 
-    private
+    def resize(columns, lines)
+      @canvas_size = [columns, lines]
+    end
 
     def render(screen)
+      screen.debug_key(@last_key) if @last_key && @options[:debug_keys]
+      resize(screen.columns, screen.lines) if @last_key == :resize
+
       @lines = ['']
       @item_ids = [[]]
       @cursor = [0, 0]
@@ -82,14 +78,16 @@ module CRDT
 
       @item_ids.last << nil # insertion point for appending at the end
       @cursor = [@item_ids.last.size - 1, @item_ids.size - 1] if @cursor_id.nil?
+      @lines << '' while @lines.size < @canvas_size[1]
       screen.draw(@lines.join("\n"), [], @cursor.reverse)
     end
 
-    def key_pressed(key)
+    def key_pressed(key, screen)
+      @last_key = key
+      modified = false
+
       case key
-      when :"Ctrl+w" then :quit
-      when :"Ctrl+q" then :quit
-      when :"Ctrl+c" then :quit
+      when :"Ctrl+q", :"Ctrl+c" then return :quit
 
       # moving cursor
       when :left, :right, :up, :down then move_cursor key
@@ -101,14 +99,21 @@ module CRDT
       when :end,  :"Ctrl+e"          then move_cursor :line_end
 
       # editing text
-      when :tab       then insert("\t")
-      when :enter     then insert("\n")
-      when :backspace then delete(-1)
-      when :delete    then delete(1)
+      when :enter     then modified = true; insert("\n")
+      when :backspace then modified = true; delete(-1)
+      when :delete    then modified = true; delete(1)
       else
-        insert(key) if key.is_a?(String) && key.size == 1
+        if key.is_a?(String) && key.size == 1
+          insert(key)
+          modified = true
+        end
       end
+
+      render(screen)
+      @cursor_x = @cursor[0] if modified
     end
+
+    private
 
     def move_cursor(command)
       case command
@@ -145,8 +150,12 @@ module CRDT
           @cursor[0] = @cursor_x = end_of_line
         end
 
-      when :line_begin then @cursor[0] = @cursor_x = 0
-      when :line_end   then @cursor[0] = @cursor_x = end_of_line
+      when :line_begin
+        @cursor[0] = @cursor_x = 0
+
+      when :line_end
+        @cursor[0] = end_of_line
+        @cursor_x = @canvas_size[0]
       end
 
       @cursor_id = @item_ids[@cursor[1]][@cursor[0]]
@@ -170,10 +179,6 @@ module CRDT
         @cursor_id = @peer.ordered_list.delete_after_id(@cursor_id, num_chars)
       end
       :delete
-    end
-
-    def resize(columns, lines)
-      @canvas_size = [columns, lines]
     end
   end
 end
