@@ -1,5 +1,33 @@
 #!/usr/bin/env ruby
+
+$stderr.sync = true
+require 'optparse'
+
+options = {}
+
+parser = OptionParser.new do |opts|
+  opts.banner = <<-BANNER.gsub(/^    /, '')
+    Collaborative text editor. Press Ctrl+c to quit.
+  BANNER
+  opts.on('-s', '--server [host:]port', 'Start in server mode and listen on the specified port', String) do |addr|
+    options[:server] = addr
+  end
+  opts.on('-c', '--client host:port', 'Start in client mode and connect to the specified server', String) do |addr|
+    options[:client] = addr
+  end
+  opts.on('--debug-keys', 'Show keys that are pressed') { options[:debug_keys] = true }
+  opts.on('-h', '--help', 'Show usage information')     { puts opts; exit(1) }
+end
+
+parser.parse!
+if !(options[:server].nil? ^ options[:client].nil?) # exactly one of the two is required
+  $stderr.puts parser
+  exit(1)
+end
+
+$LOAD_PATH.unshift(File.expand_path('../lib', File.dirname(__FILE__)))
+
 require 'crdt'
 require 'crdt/editor'
 
-CRDT::Editor.new(CRDT::Peer.new).run
+CRDT::Editor.new(CRDT::Peer.new, options).run

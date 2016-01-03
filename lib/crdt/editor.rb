@@ -1,4 +1,5 @@
 require 'dispel'
+require 'crdt/network'
 
 module CRDT
   # A basic curses-based interactive text editor
@@ -8,17 +9,20 @@ module CRDT
     def initialize(peer, options={})
       @peer = peer or raise ArgumentError, 'peer must be set'
       @options = options
+      @network = CRDT::Network.new(peer, options)
       @canvas_size = [0, 0]
       @cursor_id = nil
     end
 
     # Draw app and redraw after each keystroke
     def run
+      @network.run
       Dispel::Screen.open(@options) do |screen|
         resize(screen.columns, screen.lines)
         render(screen)
 
-        Dispel::Keyboard.output do |key|
+        Dispel::Keyboard.output(timeout: 0.1) do |key|
+          @network.poll
           break if key_pressed(key, screen) == :quit
         end
       end
@@ -29,7 +33,6 @@ module CRDT
     end
 
     def render(screen)
-      screen.debug_key(@last_key) if @last_key && @options[:debug_keys]
       resize(screen.columns, screen.lines) if @last_key == :resize
 
       @lines = ['']
@@ -80,6 +83,7 @@ module CRDT
       @cursor = [@item_ids.last.size - 1, @item_ids.size - 1] if @cursor_id.nil?
       @lines << '' while @lines.size < @canvas_size[1]
       screen.draw(@lines.join("\n"), [], @cursor.reverse)
+      screen.debug_key(@last_key) if @last_key && @options[:debug_keys]
     end
 
     def key_pressed(key, screen)
