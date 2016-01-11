@@ -1,13 +1,7 @@
 require 'crdt'
-require 'tempfile'
+require 'stringio'
 
 RSpec.describe CRDT::Encoding do
-  def new_tempfile
-    Tempfile.new('crdt_peer', Dir.tmpdir, 'wb').tap do |file|
-      @tempfiles << file
-    end
-  end
-
   def decode_msg(serialized)
     decoder = Avro::IO::BinaryDecoder.new(StringIO.new(serialized))
     reader = Avro::IO::DatumReader.new(CRDT::Encoding::MESSAGE_SCHEMA)
@@ -15,13 +9,15 @@ RSpec.describe CRDT::Encoding do
   end
 
   context 'saving peer state' do
-    before(:each) { @tempfiles = [] }
-    after (:each) { @tempfiles.each(&:close).each(&:unlink) }
+    before(:each) do
+      @file = StringIO.new
+    end
 
     it 'should save and reload an empty peer' do
       peer = CRDT::Peer.new
-      peer.save(new_tempfile)
-      reloaded = CRDT::Peer.load(@tempfiles.first.path)
+      peer.save(@file)
+      @file.rewind
+      reloaded = CRDT::Peer.load(@file)
       expect(reloaded.peer_id).to eq peer.peer_id
     end
 
@@ -30,8 +26,9 @@ RSpec.describe CRDT::Encoding do
       peer.ordered_list.insert(0, 'a').insert(1, 'b').insert(2, 'c').insert(3, 'd').delete(0)
       expect(peer.ordered_list.to_a.join).to eq 'bcd'
 
-      peer.save(new_tempfile)
-      reloaded = CRDT::Peer.load(@tempfiles.first.path)
+      peer.save(@file)
+      @file.rewind
+      reloaded = CRDT::Peer.load(@file)
       expect(reloaded.ordered_list.to_a.join).to eq 'bcd'
     end
 
@@ -44,8 +41,9 @@ RSpec.describe CRDT::Encoding do
       peer2.receive_message(peer1.encode_message)
       expect(peer2.ordered_list.to_a).to eq ['a', 'c']
 
-      peer1.save(new_tempfile)
-      peer1 = CRDT::Peer.load(@tempfiles.first.path)
+      peer1.save(@file)
+      @file.rewind
+      peer1 = CRDT::Peer.load(@file)
       peer1.receive_message(peer2.encode_message)
       expect(peer1.ordered_list.to_a).to eq ['a', 'c']
     end
@@ -57,8 +55,9 @@ RSpec.describe CRDT::Encoding do
       expect(peer2.peer_matrix.peer_id_to_index(peer2.peer_id)).to eq 0
       expect(peer2.peer_matrix.peer_id_to_index(peer1.peer_id)).to eq 1
 
-      peer2.save(new_tempfile)
-      peer2 = CRDT::Peer.load(@tempfiles.first.path)
+      peer2.save(@file)
+      @file.rewind
+      peer2 = CRDT::Peer.load(@file)
 
       expect(peer2.peer_matrix.peer_id_to_index(peer2.peer_id)).to eq 0
       expect(peer2.peer_matrix.peer_id_to_index(peer1.peer_id)).to eq 1
@@ -69,8 +68,9 @@ RSpec.describe CRDT::Encoding do
       peer.ordered_list.insert(0, 'a').insert(1, 'b')
       expect(peer.logical_ts).to eq 2
 
-      peer.save(new_tempfile)
-      peer = CRDT::Peer.load(@tempfiles.first.path)
+      peer.save(@file)
+      @file.rewind
+      peer = CRDT::Peer.load(@file)
       expect(peer.logical_ts).to eq 2
       peer.ordered_list.insert(2, 'c')
       expect(peer.logical_ts).to eq 3

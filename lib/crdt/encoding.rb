@@ -21,26 +21,23 @@ module CRDT
     MESSAGE_SCHEMA = schemas['Message']
     PEER_STATE_SCHEMA = schemas['PeerState']
 
-    # Loads a peer's state from a file with the specified +filename+ path.
-    def self.load(filename)
-      peer = nil
-      Avro::DataFile.open(filename) do |io|
-        peer_state = io.first
-        peer_id = peer_state['peers'][0]['peerID'].unpack('H*').first
-        peer = Peer.new(peer_id)
-        peer.from_avro_hash(peer_state)
-      end
+    # Loads a peer's state from a the specified IO object +file+.
+    def self.load(file)
+      reader = Avro::DataFile::Reader.new(file, Avro::IO::DatumReader.new)
+      peer_state = reader.first
+      return if peer_state.nil?
+      peer_id = peer_state['peers'][0]['peerID'].unpack('H*').first
+      peer = Peer.new(peer_id)
+      peer.from_avro_hash(peer_state)
       peer
     end
 
-    # Writes the state of this peer out to an Avro datafile. The +file+ parameter must be an open,
-    # writable file handle. It will be closed after writing.
+    # Writes the state of this peer out to the specified IO object +file+ as an Avro datafile.
     def save(file)
       writer = Avro::IO::DatumWriter.new(PEER_STATE_SCHEMA)
       io = Avro::DataFile::Writer.new(file, writer, PEER_STATE_SCHEMA)
       io << to_avro_hash
-    ensure
-      io.close
+      io.flush
     end
 
     # Returns the state of this peer as a structure of nested hashes and lists, according to the
