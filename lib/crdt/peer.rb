@@ -39,9 +39,13 @@ module CRDT
     # Lamport clock
     attr_accessor :logical_ts
 
-    # Loads a peer's state from a file with the specified +filename+ path.
-    def self.load(filename)
-      Encoding.load(filename)
+    # Loads a peer's state from a file with the specified file path, or the specified IO object.
+    def self.load(file)
+      if file.is_a? String
+        File.open(file, 'rb') {|io| Encoding.load(io) }
+      else
+        Encoding.load(file)
+      end
     end
 
     # Initializes a new peer instance with default state. If no peer ID is given, it is assigned a

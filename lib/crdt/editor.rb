@@ -26,6 +26,8 @@ module CRDT
           break if key_pressed(key, screen) == :quit
         end
       end
+    ensure
+      save
     end
 
     def resize(columns, lines)
@@ -183,6 +185,17 @@ module CRDT
         @cursor_id = @peer.ordered_list.delete_after_id(@cursor_id, num_chars)
       end
       :delete
+    end
+
+    # Saves the state of the peer to the filename given in the options. To avoid corruption in the
+    # case of an inopportune crash or power failure, first writes the data to a temporary file, then
+    # renames it to the correct filename.
+    def save
+      return if @options[:filename].nil?
+      filename = File.absolute_path(@options[:filename])
+      temp_fn = File.join(File.dirname(filename), '.' + File.basename(filename) + ".tmp.#{Process.pid}")
+      File.open(temp_fn, 'wb') {|file| @peer.save(file) }
+      File.rename(temp_fn, filename)
     end
   end
 end

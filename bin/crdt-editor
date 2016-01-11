@@ -7,8 +7,12 @@ options = {}
 
 parser = OptionParser.new do |opts|
   opts.banner = <<-BANNER.gsub(/^    /, '')
+    Usage: crdt-editor [options] file.crdt
     Collaborative text editor. Press Ctrl+c to quit.
+
+    Options:
   BANNER
+
   opts.on('-s', '--server [host:]port', 'Start in server mode and listen on the specified port', String) do |addr|
     options[:server] = addr
   end
@@ -20,7 +24,9 @@ parser = OptionParser.new do |opts|
 end
 
 parser.parse!
-if !(options[:server].nil? ^ options[:client].nil?) # exactly one of the two is required
+options[:filename] = ARGV.shift
+
+if options[:filename].nil? || !(options[:server].nil? ^ options[:client].nil?) # exactly one of server or client is required
   $stderr.puts parser
   exit(1)
 end
@@ -30,4 +36,10 @@ $LOAD_PATH.unshift(File.expand_path('../lib', File.dirname(__FILE__)))
 require 'crdt'
 require 'crdt/editor'
 
-CRDT::Editor.new(CRDT::Peer.new, options).run
+peer = if File.exists? options[:filename]
+  CRDT::Peer.load(options[:filename])
+else
+  CRDT::Peer.new
+end
+
+CRDT::Editor.new(peer, options).run
