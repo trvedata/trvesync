@@ -11,6 +11,7 @@ module CRDT
     include Comparable
 
     def <=>(other)
+      return nil unless other.respond_to?(:logical_ts) && other.respond_to?(:peer_id)
       return +1 if self.logical_ts > other.logical_ts
       return -1 if self.logical_ts < other.logical_ts
       self.peer_id <=> other.peer_id

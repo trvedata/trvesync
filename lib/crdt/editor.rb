@@ -41,7 +41,7 @@ module CRDT
       word_boundary = 0
 
       @peer.ordered_list.each_item do |item|
-        if item.insert_id == @cursor_id
+        if @cursor_id == item.insert_id
           @cursor = [@item_ids.last.size, @item_ids.size - 1]
         end
 
