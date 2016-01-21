@@ -123,11 +123,8 @@ RSpec.describe CRDT::PeerMatrix do
     peer1, peer2 = CRDT::Peer.new, CRDT::Peer.new
     peer1.ordered_list.insert(0, :a)
 
-    messages_terminate = false
-
     for i in 0..5  # 5 rounds should more than sufficient for peers to get into a stable state
-      if !peer1.anything_to_send? && !peer2.anything_to_send?
-        messages_terminate = true
+      if not (peer1.anything_to_send? || peer2.anything_to_send?)
         break
       end
 
@@ -135,11 +132,11 @@ RSpec.describe CRDT::PeerMatrix do
         peer2.process_message(peer1.make_message)
       end
 
-      if peer1.anything_to_send?
+      if peer2.anything_to_send?
         peer1.process_message(peer2.make_message)
       end
     end
 
-    expect(messages_terminate).to be true
+    expect(peer1.anything_to_send? || peer2.anything_to_send?).to be false
   end
 end
