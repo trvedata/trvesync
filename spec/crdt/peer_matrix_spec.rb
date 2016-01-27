@@ -118,4 +118,25 @@ RSpec.describe CRDT::PeerMatrix do
     expect(peer3.peer_matrix.causally_ready?(peer2.peer_id)).to be true
     expect(peer3.peer_matrix.causally_ready?(peer1.peer_id)).to be true
   end
+
+  it 'should stop sending messages eventually after no more changes occur' do
+    peer1, peer2 = CRDT::Peer.new, CRDT::Peer.new
+    peer1.ordered_list.insert(0, :a)
+
+    for i in 0..5  # 5 rounds should more than sufficient for peers to get into a stable state
+      if not (peer1.anything_to_send? || peer2.anything_to_send?)
+        break
+      end
+
+      if peer1.anything_to_send?
+        peer2.process_message(peer1.make_message)
+      end
+
+      if peer2.anything_to_send?
+        peer1.process_message(peer2.make_message)
+      end
+    end
+
+    expect(peer1.anything_to_send? || peer2.anything_to_send?).to be false
+  end
 end
