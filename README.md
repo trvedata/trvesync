@@ -7,7 +7,7 @@ more well-defined as we learn more.
 License
 -------
 
-Copyright 2015, University of Cambridge.
+Copyright 2015-2016, University of Cambridge.
 Licensed under the Apache License, Version 2.0 (see `LICENSE`).
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is
