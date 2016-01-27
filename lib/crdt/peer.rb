@@ -61,7 +61,7 @@ module CRDT
 
     # Returns true if this peer has buffered information that should be broadcast to other peers.
     def anything_to_send?
-      !@peer_matrix.local_clock_update.empty? || !@send_buf.empty?
+      !@send_buf.empty?
     end
 
     # Generates a new unique ItemID for use within the CRDT.
