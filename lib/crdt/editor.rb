@@ -143,7 +143,7 @@ module CRDT
       when :up
         if @cursor[1] > 0
           @cursor[1] -= 1
-          @cursor[0] = [[@cursor[0], @cursor_x].max, end_of_line].min
+          @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
         else
           @cursor[0] = @cursor_x = 0
         end
@@ -151,7 +151,7 @@ module CRDT
       when :down
         if @cursor[1] < @item_ids.size - 1
           @cursor[1] += 1
-          @cursor[0] = [[@cursor[0], @cursor_x].max, end_of_line].min
+          @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
         else
           @cursor[0] = @cursor_x = end_of_line
         end
