@@ -11,10 +11,10 @@ import org.trvedata.Peer;
 
 public class CausalityTest {
 	@Test
-	public void testDependenciesSatisfied() { //should check that dependencies are satisfied
-	    Peer<Character> peer1 = new Peer<Character>("peer1");
-	    Peer<Character> peer2 = new Peer<Character>("peer2");
-	    Peer<Character> peer3 = new Peer<Character>("peer3");
+	public void testDependenciesSatisfied() { // should check that dependencies are satisfied
+		Peer<Character> peer1 = new Peer<Character>("peer1");
+		Peer<Character> peer2 = new Peer<Character>("peer2");
+		Peer<Character> peer3 = new Peer<Character>("peer3");
 		peer1.getOrderedList().insert(0, 'a');
 		Message peer1Msg = peer1.makeMessage();
 

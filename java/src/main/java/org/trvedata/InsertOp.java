@@ -3,7 +3,7 @@ package org.trvedata;
 public class InsertOp<T> implements ChangingOperation {
 	private ItemID referenceId;
 	private ItemID newId;
-	T value;
+	private T value;
 
 	public InsertOp(ItemID referenceId, ItemID newId, T value) {
 		this.referenceId = referenceId;
@@ -53,6 +53,7 @@ public class InsertOp<T> implements ChangingOperation {
 			return false;
 		if (getClass() != obj.getClass())
 			return false;
+		@SuppressWarnings("rawtypes")
 		InsertOp other = (InsertOp) obj;
 		if (newId == null) {
 			if (other.newId != null)
@@ -71,6 +72,9 @@ public class InsertOp<T> implements ChangingOperation {
 			return false;
 		return true;
 	}
-	
-	
+
+	@Override
+	public String toString() {
+		return "InsertOp [referenceId=" + referenceId + ", newId=" + newId + ", value=" + value + "]";
+	}
 }

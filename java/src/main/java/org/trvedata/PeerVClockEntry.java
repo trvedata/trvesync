@@ -1,24 +1,43 @@
 package org.trvedata;
 
-
-// One entry in a vector clock. The +peerId+ is the hex string representing
-// a peer; the peerIndex is the number we have
-// locally assigned to that peer; and msgCount is the number of messages we
-// have received from that peer.
+/**
+ * One entry in a vector clock. The peerId is the hex string representing a peer; the peerIndex is the number we have
+ * locally assigned to that peer; and msgCount is the number of messages we have received from that peer.
+ */
 public class PeerVClockEntry implements Comparable<PeerVClockEntry> {
-	String peerId;
-	int peerIndex;
-	long msgCount;
+	private String peerId;
+	private int peerIndex;
+	private long msgCount;
 
 	public PeerVClockEntry(String peerId, int peerIndex, long msgCount) {
 		this.peerId = peerId;
 		this.peerIndex = peerIndex;
+		this.setMsgCount(msgCount);
+	}
+
+	public String getPeerId() {
+		return peerId;
+	}
+
+	public int getPeerIndex() {
+		return peerIndex;
+	}
+
+	public long incrementMsgCount() {
+		return ++msgCount;
+	}
+
+	public long getMsgCount() {
+		return msgCount;
+	}
+
+	public void setMsgCount(long msgCount) {
 		this.msgCount = msgCount;
 	}
 
+	@Override
 	public String toString() {
-		return "PeerVClockEntry (peerId: " + this.peerId + ", peerIndex: " + this.peerIndex + ", msgCount: "
-				+ this.msgCount + ")";
+		return "PeerVClockEntry [peerId=" + peerId + ", peerIndex=" + peerIndex + ", msgCount=" + msgCount + "]";
 	}
 
 	@Override
@@ -30,7 +49,7 @@ public class PeerVClockEntry implements Comparable<PeerVClockEntry> {
 	public int hashCode() {
 		final int prime = 31;
 		int result = 1;
-		result = prime * result + (int) (msgCount ^ (msgCount >>> 32));
+		result = prime * result + (int) (getMsgCount() ^ (getMsgCount() >>> 32));
 		result = prime * result + ((peerId == null) ? 0 : peerId.hashCode());
 		result = prime * result + peerIndex;
 		return result;
@@ -45,7 +64,7 @@ public class PeerVClockEntry implements Comparable<PeerVClockEntry> {
 		if (getClass() != obj.getClass())
 			return false;
 		PeerVClockEntry other = (PeerVClockEntry) obj;
-		if (msgCount != other.msgCount)
+		if (getMsgCount() != other.getMsgCount())
 			return false;
 		if (peerId == null) {
 			if (other.peerId != null)

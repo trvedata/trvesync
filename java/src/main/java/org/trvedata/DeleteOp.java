@@ -1,7 +1,6 @@
 package org.trvedata;
 
 public class DeleteOp implements ChangingOperation {
-	
 	private ItemID deleteId;
 	private ItemID deleteTs;
 
@@ -17,7 +16,7 @@ public class DeleteOp implements ChangingOperation {
 	public ItemID getDeleteId() {
 		return deleteId;
 	}
-	
+
 	public ItemID getDeleteTs() {
 		return deleteTs;
 	}

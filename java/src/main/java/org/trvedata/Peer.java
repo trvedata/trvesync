@@ -27,7 +27,7 @@ public class Peer<T> {
 		this.recvBuf = new HashMap<String, Deque<Operation>>();
 	}
 
-	String createRandomPeerID() {
+	protected String createRandomPeerID() {
 		SecureRandom rand = new SecureRandom();
 		byte[] bytes = new byte[32];
 		String ret = "";
@@ -41,16 +41,15 @@ public class Peer<T> {
 		return !this.sendBuf.isEmpty();
 	}
 
-	ItemID nextId() {
+	protected ItemID nextId() {
 		return new ItemID(++this.logicalTs, this.peerId);
 	}
 
-	void sendOperation(Operation operation) {
+	protected void sendOperation(Operation operation) {
 		if (!this.peerMatrix.localClockUpdate.isEmpty()) {
 			this.sendBuf.push(this.peerMatrix.localClockUpdate);
 			this.peerMatrix.resetClockUpdate();
 		}
-
 		this.sendBuf.addLast(operation);
 	}
 
@@ -59,8 +58,7 @@ public class Peer<T> {
 			this.sendBuf.push(this.peerMatrix.localClockUpdate);
 			this.peerMatrix.resetClockUpdate();
 		}
-
-		Message message = new Message(this.peerId, this.peerMatrix.getMessageCount(true), this.sendBuf);
+		Message message = new Message(this.peerId, this.peerMatrix.incrementMsgCount(), this.sendBuf);
 		this.sendBuf = new ArrayDeque<Operation>();
 		return message;
 	}
@@ -68,17 +66,16 @@ public class Peer<T> {
 	public void processMessage(Message message) {
 		if (!(message instanceof Message))
 			throw new RuntimeException("Invalid message: " + message);
-		if (this.recvBuf.get(message.originPeerId) == null)
-			this.recvBuf.put(message.originPeerId, new ArrayDeque<Operation>());
+		if (this.recvBuf.get(message.getOriginPeerId()) == null)
+			this.recvBuf.put(message.getOriginPeerId(), new ArrayDeque<Operation>());
 		// append all elements in message.operations to this.recvBuf
-		this.recvBuf.get(message.originPeerId).addAll(message.getOperations());
-
-		this.recvBuf.get(message.originPeerId).add(new MessageProcessed(message.msgCount));
+		this.recvBuf.get(message.getOriginPeerId()).addAll(message.getOperations());
+		this.recvBuf.get(message.getOriginPeerId()).add(new MessageProcessed(message.getMsgCount()));
 		while (this.applyOperationsIfReady())
 			;
 	}
 
-	boolean applyOperationsIfReady() {
+	protected boolean applyOperationsIfReady() {
 		String readyPeerId = null;
 		Deque<Operation> readyOps = null;
 		for (String peerId : this.recvBuf.keySet()) {
@@ -90,33 +87,26 @@ public class Peer<T> {
 		}
 		if (readyPeerId == null)
 			return false;
-
 		while (!readyOps.isEmpty()) {
 			Operation operation = readyOps.pop();
-			System.out.println("peer " + this.peerId + ": Processing operation from " + readyPeerId + ": " + operation);
-
+			if (GlobalConstants.DEBUG)
+				System.out.println("Peer " + peerId + ": Processing operation from " + readyPeerId + ": " + operation);
 			if (operation instanceof ClockUpdate) {
 				this.peerMatrix.applyClockUpdate(readyPeerId, (ClockUpdate) operation);
-
-				// Applying the clock update might make the following
-				// operations causally non-ready, so we stop processing
-				// operations from this peer and check again for causal
-				// readiness.
+				// Applying the clock update might make the following operations causally non-ready, so we stop
+				// processing operations from this peer and check again for causal readiness.
 				return true;
 			} else if (operation instanceof MessageProcessed) {
 				MessageProcessed messageProcessed = (MessageProcessed) operation;
-				this.peerMatrix.processedIncomingMsg(readyPeerId, messageProcessed.msgCount);
+				this.peerMatrix.processedIncomingMsg(readyPeerId, messageProcessed.getMsgCount());
 			} else {
 				ChangingOperation changingOp = (ChangingOperation) operation;
-				if (this.logicalTs < changingOp.logicalTs()) {
+				if (this.logicalTs < changingOp.logicalTs())
 					this.logicalTs = changingOp.logicalTs();
-				}
 				this.getOrderedList().applyOperation(changingOp);
 			}
 		}
-
 		readyOps.clear();
-
 		return true; // Finished this peer, now another peer's operations might be causally ready
 	}
 
@@ -130,5 +120,11 @@ public class Peer<T> {
 
 	public String getPeerId() {
 		return peerId;
+	}
+
+	@Override
+	public String toString() {
+		return "Peer [peerId=" + peerId + ", peerMatrix=" + peerMatrix + ", orderedList=" + orderedList + ", logicalTs=" + logicalTs + ", sendBuf="
+				+ sendBuf + ", recvBuf=" + recvBuf + "]";
 	}
 }

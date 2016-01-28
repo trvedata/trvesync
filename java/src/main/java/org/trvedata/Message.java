@@ -1,11 +1,10 @@
 package org.trvedata;
-import java.util.Deque;
-import java.util.Queue;
 
+import java.util.Deque;
 
 public class Message {
-	String originPeerId;
-	long msgCount;
+	private String originPeerId;
+	private long msgCount;
 	private Deque<Operation> operations;
 
 	public Message(String originPeerId, long msgCount, Deque<Operation> operations) {
@@ -20,5 +19,14 @@ public class Message {
 
 	public long getMsgCount() {
 		return msgCount;
+	}
+
+	public String getOriginPeerId() {
+		return originPeerId;
+	}
+
+	@Override
+	public String toString() {
+		return "Message [originPeerId=" + originPeerId + ", msgCount=" + msgCount + ", operations=" + operations + "]";
 	}
 }

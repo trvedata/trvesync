@@ -1,13 +1,18 @@
 package org.trvedata;
 
 public class MessageProcessed implements Operation {
-	long msgCount;
+	private long msgCount;
 
 	public MessageProcessed(long msgCount) {
 		this.msgCount = msgCount;
 	}
 
+	public long getMsgCount() {
+		return msgCount;
+	}
+
+	@Override
 	public String toString() {
-		return "MessageProcessed (msgCount: " + this.msgCount + ")";
+		return "MessageProcessed [msgCount=" + msgCount + "]";
 	}
 }
