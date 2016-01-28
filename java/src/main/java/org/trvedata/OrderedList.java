@@ -118,7 +118,9 @@ public class OrderedList<T> implements Iterable<T> {
 		return item == null ? null : item.insertId;
 	}
 
-	// Deletes numItems items from the list (local operation). The item
+	/**
+	 * Deletes numItems items from the list (local operation). The item
+	 */
 	public ItemID removeAfterId(ItemID cursorId, int numItems) {
 		Item<T> item = this.itemsById.get(cursorId);
 		if (item == null)
