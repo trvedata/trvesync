@@ -51,8 +51,8 @@ var Peer = function Peer(peerId) {
 };
 
 Peer.prototype.createRandomPeerID = function() {
-    // TODO check if this is a good way to generate a random hex string code and whether we need a
-    // cryptographically secure one.
+    // TODO check if this is a good way to generate a random hex string code and whether we need a cryptographically
+    // secure one.
     // From http://stackoverflow.com/questions/5398737/how-can-i-make-a-simple-wep-key-generator-in-javascript
     var length = 64;
     var ret = "";
@@ -63,7 +63,6 @@ Peer.prototype.createRandomPeerID = function() {
 };
 
 Peer.prototype.anythingToSend = function() {
-//    return !this.peerMatrix.localClockUpdate.empty() ||
     return this.sendBuf.length !== 0;
 };
 
@@ -146,12 +145,12 @@ var PeerMatrix = function PeerMatrix(ownPeerId) {
     // index assignment (see indexByPeerId); peer2Index is according to peer1's index assignment.
     this.matrix = [[new PeerVClockEntry(ownPeerId, 0, 0)]];
 
-// A hash, where the key is a peer ID (as hex string) and the value is the index that this peer has locally assigned to
-// that peer ID. The indexes must be strictly sequential.
+    // Key: Peer ID (as hex string), Value: Index that this peer has locally assigned to that peer ID. The indexes must
+    // be strictly sequential.
     this.indexByPeerId = new Map();
     this.indexByPeerId.set(ownPeerId, 0);
 
-// This is used to record any operations we see from other peers, so that we can broadcast vector clock diffs to others.
+    // Used to record any operations we see from other peers, so that we can broadcast vector clock diffs to others.
     this.localClockUpdate = new ClockUpdate();
 };
 

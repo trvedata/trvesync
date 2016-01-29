@@ -3,10 +3,10 @@
 function MapEntry(key, value) {
     this.key = key;
     this.value = value;
-}       
+}
 
-MapEntry.prototype.toString = function() {      
-    return this.key + "=" + this.value; 
+MapEntry.prototype.toString = function() {
+    return this.key + "=" + this.value;
 };
 
 function HashMap() {
@@ -70,7 +70,7 @@ HashMap.prototype = {
 function stringHashCode(str) {
     var hash = 5381;
     for (var i = 0; i < str.length; i++) {
-        hash = ((hash << 5) + hash) + str.charCodeAt(i); 
+        hash = ((hash << 5) + hash) + str.charCodeAt(i);
     }
     return hash;
 }
@@ -79,7 +79,7 @@ function calculateHash(o) {
     // TODO think about making this nicer
     if (o.hashCode)
         return o.hashCode();
-    return o.toString().hashCode();
+    return stringHashCode(o.toString());
 }
 
 function equal(a, b) {
