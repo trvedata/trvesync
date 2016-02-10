@@ -7,6 +7,10 @@ GEM
     diff-lcs (1.2.5)
     dispel (0.0.7)
       curses
+    eventmachine (1.0.9.1)
+    faye-websocket (0.10.2)
+      eventmachine (>= 0.12.0)
+      websocket-driver (>= 0.5.1)
     multi_json (1.11.2)
     rspec (3.3.0)
       rspec-core (~> 3.3.0)
@@ -14,6 +18,9 @@ GEM
       rspec-mocks (~> 3.3.0)
     rspec-core (3.3.2)
       rspec-support (~> 3.3.0)
+    rspec-eventmachine (0.2.0)
+      eventmachine (>= 0.12.0)
+      rspec (>= 2.0, < 4.0)
     rspec-expectations (3.3.1)
       diff-lcs (>= 1.2.0, < 2.0)
       rspec-support (~> 3.3.0)
@@ -21,6 +28,9 @@ GEM
       diff-lcs (>= 1.2.0, < 2.0)
       rspec-support (~> 3.3.0)
     rspec-support (3.3.0)
+    websocket-driver (0.6.3)
+      websocket-extensions (>= 0.1.0)
+    websocket-extensions (0.1.2)
 
 PLATFORMS
   ruby
@@ -28,4 +38,6 @@ PLATFORMS
 DEPENDENCIES
   avro
   dispel
+  faye-websocket
   rspec
+  rspec-eventmachine

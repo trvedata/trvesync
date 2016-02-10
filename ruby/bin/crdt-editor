@@ -13,11 +13,8 @@ parser = OptionParser.new do |opts|
     Options:
   BANNER
 
-  opts.on('-s', '--server [host:]port', 'Start in server mode and listen on the specified port', String) do |addr|
-    options[:server] = addr
-  end
-  opts.on('-c', '--client host:port', 'Start in client mode and connect to the specified server', String) do |addr|
-    options[:client] = addr
+  opts.on('-w', '--websocket ws://host:port/path', 'Connect to WebSocket server at this URL', String) do |url|
+    options[:websocket] = url
   end
   opts.on('--debug-keys', 'Show keys that are pressed') { options[:debug_keys] = true }
   opts.on('-h', '--help', 'Show usage information')     { puts opts; exit(1) }
@@ -26,7 +23,7 @@ end
 parser.parse!
 options[:filename] = ARGV.shift
 
-if options[:filename].nil? || !(options[:server].nil? ^ options[:client].nil?) # exactly one of server or client is required
+if options[:filename].nil? || options[:websocket].nil?
   $stderr.puts parser
   exit(1)
 end

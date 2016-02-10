@@ -33,7 +33,7 @@ RSpec.describe CRDT::Editor do
   end
 
   before :each do
-    @editor = CRDT::Editor.new(CRDT::Peer.new)
+    @editor = CRDT::Editor.new(CRDT::Peer.new, websocket: 'ws://foo.example.com/events')
     @editor.resize(20, 5)
     @screen = MockScreen.new
   end
