@@ -1,3 +1,4 @@
+require 'uri'
 require 'thread'
 require 'faye/websocket'
 require 'eventmachine'
@@ -17,11 +18,15 @@ module CRDT
 
     def initialize(peer, url, logger=lambda {|msg| })
       @peer = peer or raise ArgumentError, 'peer must be set'
-      if !url.match(%r{\Awss?://[A-Za-z0-9\-\.]+(:[0-9]+)?/})
+      parsed_url = URI.parse(url)
+      if !['ws', 'wss'].include?(parsed_url.scheme) || parsed_url.host.nil?
         raise ArgumentError, 'WebSocket URL should look like ws://host[:port]/path'
       end
-      @url = url
+      parsed_url.query = URI.encode_www_form(URI.decode_www_form(parsed_url.query || '') + [['peer_id', peer.peer_id]])
+      @url = parsed_url.to_s
       @logger = logger
+      @subscribe_request = peer.encode_subscribe_request
+      @channel_id = peer.channel_id
       @recv_queue = Queue.new
       @send_queue = Queue.new
       @in_flight = []
@@ -50,13 +55,14 @@ module CRDT
     private
 
     def connect
-      logger.call "Connecting to WebSocket server at #@url"
+      logger.call "Connecting to WebSocket server at #@url on channel #@channel_id"
       websocket = Faye::WebSocket::Client.new(@url, nil, :ping => 20)
 
       websocket.on :open do |event|
         raise 'Two connections open simultaneously' if @websocket
         @websocket = websocket
         logger.call 'Connected to WebSocket server'
+        @websocket.send(@subscribe_request.unpack('C*'))
         send_queue_poll
       end
 
@@ -95,11 +101,8 @@ module CRDT
     def receive_message(event)
       message = event.data.is_a?(Array) ? event.data.pack('C*') : event.data
       # TODO need to handle messages getting reordered?
-      if @in_flight.first == message
-        @in_flight.shift
-      else
-        @recv_queue << message
-      end
+      @in_flight.shift if @in_flight.first == message
+      @recv_queue << message
     end
   end
 end

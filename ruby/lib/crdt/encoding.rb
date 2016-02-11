@@ -20,14 +20,16 @@ module CRDT
 
     MESSAGE_SCHEMA = schemas['Message']
     PEER_STATE_SCHEMA = schemas['PeerState']
+    CLIENT_TO_SERVER_SCHEMA = schemas['org.trvedata.trvedb.avro.ClientToServer']
+    SERVER_TO_CLIENT_SCHEMA = schemas['org.trvedata.trvedb.avro.ServerToClient']
 
     # Loads a peer's state from a the specified IO object +file+.
-    def self.load(file)
+    def self.load(file, options={})
       reader = Avro::DataFile::Reader.new(file, Avro::IO::DatumReader.new)
       peer_state = reader.first
       return if peer_state.nil?
       peer_id = peer_state['peers'][0]['peerID'].unpack('H*').first
-      peer = Peer.new(peer_id)
+      peer = Peer.new(peer_id, options)
       peer.from_avro_hash(peer_state)
       peer
     end
@@ -44,16 +46,20 @@ module CRDT
     # +PeerState+ schema.
     def to_avro_hash
       {
-        'logicalTS' => logical_ts,
-        'peers' => encode_peer_matrix,
-        'data' => encode_ordered_list
+        'channelID'     => hex_to_bin(channel_id),
+        'channelOffset' => channel_offset,
+        'logicalTS'     => logical_ts,
+        'peers'         => encode_peer_matrix,
+        'data'          => encode_ordered_list
       }
     end
 
     # Loads the state of this peer from a structure of nested hashes and lists, according to the
     # +PeerState+ schema.
     def from_avro_hash(state)
-      self.logical_ts = state['logicalTS']
+      self.channel_id     = bin_to_hex(state['channelID'])
+      self.channel_offset = state['channelOffset']
+      self.logical_ts     = state['logicalTS']
       decode_peer_matrix(state['peers'])
       decode_ordered_list(state['data'])
     end
@@ -146,11 +152,9 @@ module CRDT
       {'items' => items}
     end
 
-    # Takes all accumulated changes since the last call to #encode_message, and returns them as an
-    # Avro-encoded byte string that should be broadcast to all peers.
-    def encode_message
-      message = make_message
-
+    # Transforms a CRDT::Peer::Message object into an Avro-encoded byte string that should be
+    # broadcast to all peers.
+    def encode_message_payload(message)
       operations = message.operations.map do |operation|
         case operation
         when PeerMatrix::ClockUpdate then encode_clock_update(operation)
@@ -159,38 +163,114 @@ module CRDT
         end
       end
 
-      message_hash = {
-        'origin'     => hex_to_bin(message.origin_peer_id),
-        'msgCount'   => message.msg_count,
-        'operations' => operations
-      }
-
       encoder = Avro::IO::BinaryEncoder.new(StringIO.new)
-      Avro::IO::DatumWriter.new(MESSAGE_SCHEMA).write(message_hash, encoder)
+      Avro::IO::DatumWriter.new(MESSAGE_SCHEMA).write({'operations' => operations}, encoder)
       encoder.writer.string
     end
 
-    # Receives an incoming message from another peer, given as an Avro-encoded byte string.
-    def receive_message(serialized)
+    # Decodes an incoming message from another peer, given as an Avro-encoded byte string.
+    # Returns an array of operation objects.
+    def decode_message_payload(sender_id, serialized)
       serialized = StringIO.new(serialized) unless serialized.respond_to? :read
       decoder = Avro::IO::BinaryDecoder.new(serialized)
       reader = Avro::IO::DatumReader.new(MESSAGE_SCHEMA)
       message = reader.read(decoder)
-      origin_peer_id = bin_to_hex(message['origin'])
 
-      operations = message['operations'].map do |operation|
+      message['operations'].map do |operation|
         if operation['updates'] # ClockUpdate message
-          decode_clock_update(origin_peer_id, operation)
+          decode_clock_update(sender_id, operation)
         elsif operation['newID'] # OrderedListInsert message
-          decode_list_insert(origin_peer_id, operation)
+          decode_list_insert(sender_id, operation)
         elsif operation['deleteID'] # OrderedListDelete message
-          decode_list_delete(origin_peer_id, operation)
+          decode_list_delete(sender_id, operation)
         else
           raise "Unexpected operation type: #{operation.inspect}"
         end
       end
+    end
 
-      process_message(Peer::Message.new(origin_peer_id, message['msgCount'], operations))
+    # Decodes a ServerToClient command received from a WebSocket server. It has the following
+    # structure:
+    #
+    #     {'message' => {
+    #       # Identifies the channel on the server to which the message belongs
+    #       'channelID'   => '...',
+    #
+    #       # PeerID of the sender of the message
+    #       'senderID'    => 'asdfasdf',
+    #
+    #       # Per-peerID, per-channel message sequence number (must increment by 1 for every message)
+    #       'senderSeqNo' => 12,
+    #
+    #       # Per-channel monotonically increasing (not necessarily incrementing) number
+    #       'offset'      => 123,
+    #
+    #       # Avro-encoded message payload as a byte string (not interpreted by the server)
+    #       'payload'     => '...'
+    #     }}
+    def receive_message(serialized)
+      serialized = StringIO.new(serialized) unless serialized.respond_to? :read
+      decoder = Avro::IO::BinaryDecoder.new(serialized)
+      reader = Avro::IO::DatumReader.new(SERVER_TO_CLIENT_SCHEMA)
+      message = reader.read(decoder)['message']
+
+      sender_id = bin_to_hex(message['senderID'])
+      if bin_to_hex(message['channelID']) != channel_id
+        raise "Received message on unexpected channel: #{bin_to_hex(message['channelID'])}"
+      end
+
+      process_message(Peer::Message.new(sender_id, message['senderSeqNo'], message['offset'],
+        decode_message_payload(sender_id, message['payload'])))
+    end
+
+    # Takes all accumulated changes since the last call to #encode_message, and constructs
+    # a SendMessage command to send to a WebSocket server. It has the following structure:
+    #
+    #     {
+    #       # Identifies the channel on the server to which the message should be broadcast
+    #       'channelID' => '...',
+    #
+    #       # Per-peerID, per-channel message sequence number (must increment by 1 for every message)
+    #       'senderSeqNo' => 123,
+    #
+    #       # Avro-encoded message payload as a byte string (not interpreted by the server)
+    #       'payload' => '...'
+    #     }
+    def encode_message
+      message = make_message
+
+      message_hash = {
+        'channelID'   => hex_to_bin(channel_id),
+        'senderSeqNo' => message.msg_count,
+        'payload'     => encode_message_payload(message)
+      }
+
+      encoder = Avro::IO::BinaryEncoder.new(StringIO.new)
+      writer = Avro::IO::DatumWriter.new(CLIENT_TO_SERVER_SCHEMA)
+      writer.write({'message' => message_hash}, encoder)
+      encoder.writer.string
+    end
+
+    # Constructs a SubscribeToChannel command to send to a WebSocket server. It has the following
+    # structure:
+    #
+    #     {
+    #       # Identifies the channel to which the client wants to subscribe
+    #       'channelID' => '...',
+    #
+    #       # Offset of the last message received from this channel (-1 if nothing received yet)
+    #       'startOffset' => 123
+    #     }
+    def encode_subscribe_request
+      message_hash = {
+        'channelID'   => hex_to_bin(channel_id),
+        'startOffset' => channel_offset
+      }
+
+      encoder = Avro::IO::BinaryEncoder.new(StringIO.new)
+      writer = Avro::IO::DatumWriter.new(CLIENT_TO_SERVER_SCHEMA)
+      writer.write({'message' => message_hash}, encoder)
+      encoder.writer.string
     end
 
     # Decodes a ClockUpdate message from a remote peer. It has the following structure:

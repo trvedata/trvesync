@@ -5,6 +5,10 @@ require 'rspec/mocks/standalone'
 RSpec.describe CRDT::Network do
   # Implements the interface of CRDT::Peer.
   class MockPeer
+    def peer_id; '0000'; end
+    def channel_id; '1234'; end
+    def encode_subscribe_request; 'subscribe'; end
+
     def anything_to_send?
       !@to_send.nil?
     end
@@ -101,7 +105,7 @@ RSpec.describe CRDT::Network do
     @peer.send_message('hello')
     @net.poll
     @net.send(:send_queue_poll)
-    expect(@client.messages).to eq ['hello'.unpack('C*')]
+    expect(@client.messages).to eq ['subscribe'.unpack('C*'), 'hello'.unpack('C*')]
   end
 
   it 'should flush queued messages when a connection is established' do
@@ -111,7 +115,7 @@ RSpec.describe CRDT::Network do
     @net.send(:send_queue_poll)
     expect(@client.messages).to eq []
     @client.trigger_open
-    expect(@client.messages).to eq ['one'.unpack('C*'), 'two'.unpack('C*')]
+    expect(@client.messages).to eq ['subscribe'.unpack('C*'), 'one'.unpack('C*'), 'two'.unpack('C*')]
   end
 
   it 'should receive messages sent by the server' do
@@ -127,7 +131,7 @@ RSpec.describe CRDT::Network do
     @peer.send_message('hello'); @net.poll
     @peer.send_message('again'); @net.poll
     @net.send(:send_queue_poll)
-    expect(@client.messages).to eq ['hello'.unpack('C*'), 'again'.unpack('C*')]
+    expect(@client.messages).to eq ['subscribe'.unpack('C*'), 'hello'.unpack('C*'), 'again'.unpack('C*')]
 
     expect(@em).to receive(:add_timer) {|_, &block| @reconnect = block }
     @client.trigger_close(1006, '')
@@ -136,14 +140,14 @@ RSpec.describe CRDT::Network do
     expect(client2.messages).to be_empty
 
     client2.trigger_open
-    expect(client2.messages).to eq ['hello'.unpack('C*'), 'again'.unpack('C*')]
+    expect(client2.messages).to eq ['subscribe'.unpack('C*'), 'hello'.unpack('C*'), 'again'.unpack('C*')]
   end
 
   it 'should not resend messages that have been confirmed by the server' do
     @peer.send_message('hello'); @net.poll
     @peer.send_message('again'); @net.poll
     @client.trigger_open
-    expect(@client.messages).to eq ['hello'.unpack('C*'), 'again'.unpack('C*')]
+    expect(@client.messages).to eq ['subscribe'.unpack('C*'), 'hello'.unpack('C*'), 'again'.unpack('C*')]
 
     @client.trigger_message('hello'.unpack('C*'))
 
@@ -153,6 +157,6 @@ RSpec.describe CRDT::Network do
     client2 = MockClient.instances.last
 
     client2.trigger_open
-    expect(client2.messages).to eq ['again'.unpack('C*')]
+    expect(client2.messages).to eq ['subscribe'.unpack('C*'), 'again'.unpack('C*')]
   end
 end

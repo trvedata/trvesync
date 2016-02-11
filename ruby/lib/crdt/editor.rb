@@ -9,7 +9,7 @@ module CRDT
     def initialize(peer, options={})
       @peer = peer or raise ArgumentError, 'peer must be set'
       @options = options
-      @network = CRDT::Network.new(peer, options[:websocket])
+      @network = CRDT::Network.new(peer, options[:websocket], options[:logger] || lambda {|msg| })
       @canvas_size = [0, 0]
       @cursor_id = nil
     end

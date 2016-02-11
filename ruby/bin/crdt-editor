@@ -16,6 +16,9 @@ parser = OptionParser.new do |opts|
   opts.on('-w', '--websocket ws://host:port/path', 'Connect to WebSocket server at this URL', String) do |url|
     options[:websocket] = url
   end
+  opts.on('-j', '--join channelID', 'Collaborate on an existing document', String) do |channel_id|
+    options[:channel_id] = channel_id
+  end
   opts.on('--debug-keys', 'Show keys that are pressed') { options[:debug_keys] = true }
   opts.on('-h', '--help', 'Show usage information')     { puts opts; exit(1) }
 end
@@ -33,10 +36,17 @@ $LOAD_PATH.unshift(File.expand_path('../lib', File.dirname(__FILE__)))
 require 'crdt'
 require 'crdt/editor'
 
-peer = if File.exists? options[:filename]
-  CRDT::Peer.load(options[:filename])
-else
-  CRDT::Peer.new
-end
+File.open('/tmp/trvesync.log', 'a') do |logfile|
+  options[:logger] = lambda {|msg| logfile.puts(msg); logfile.flush }
 
-CRDT::Editor.new(peer, options).run
+  if File.exists? options[:filename]
+    peer = CRDT::Peer.load(options[:filename], options)
+    if options[:channel_id] && peer.channel_id != options[:channel_id]
+      raise "Invalid --join option: file #{options[:filename]} is for channel #{peer.channel_id}, but --join option specifies channel #{options[:channel_id]}"
+    end
+  else
+    peer = CRDT::Peer.new(nil, options)
+  end
+
+  CRDT::Editor.new(peer, options).run
+end

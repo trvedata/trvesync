@@ -94,17 +94,6 @@
   type: record
   doc: Packet of information that is broadcast from one peer to all other peers.
   fields:
-    - name: origin
-      type: PeerID
-      doc: Globally unique identifier of the peer that sent this message.
-    - name: msgCount
-      type: long
-      doc: >-
-        Message sequence number. The messages broadcast by each peer are numbered sequentially,
-        starting at 1. Including this number on every message acts as a check on the underlying
-        transport (making sure that operations are not dropped, duplicated or reordered), and it
-        allows detection of "forgetful" peers (which forget that they have already sent some
-        message, or forget some change that was broadcast but not stored durably due to a crash).
     - name: operations
       doc: Sequence of operations that have taken place at the origin peer.
       type:
@@ -149,6 +138,22 @@
     Records the state of a peer device and its knowledge about other peers. This structure is
     written to stable storage when a peer shuts down, and loaded when it comes back up.
   fields:
+    - name: channelID
+      doc: >-
+        Globally unique identifier of the message channel on the server on which all edits of this
+        document are stored and broadcast.
+      type:
+        name: ChannelID
+        type: fixed
+        size: 16
+    - name: channelOffset
+      type: long
+      default: -1
+      doc: >-
+        Every message on a channel has a monotonically increasing offset. This field stores the
+        highest message offset that this peer has received. It is used when reconnecting to the
+        server after some time offline, to catch up on any messages that were added to the channel
+        while the client was away. The offset is initially -1 (if no message has been received).
     - name: logicalTS
       type: long
       doc: >-
@@ -194,3 +199,69 @@
     - name: data
       type: OrderedList
       doc: The actual data structure being maintained at this peer.
+
+
+# Definition of the network protocol for speaking to a server over a WebSocket
+- name: ChannelID
+  namespace: org.trvedata.trvedb.avro
+  type: fixed
+  size: 16
+
+- name: PeerID
+  namespace: org.trvedata.trvedb.avro
+  type: fixed
+  size: 32
+
+- name: SendMessage
+  namespace: org.trvedata.trvedb.avro
+  type: record
+  doc: Sent from client to server, requesting that a message be published to a particular channel.
+  fields:
+    - name: channelID
+      type: ChannelID
+    - name: senderSeqNo
+      type: long
+    - name: payload
+      type: bytes
+
+- name: SubscribeToChannel
+  namespace: org.trvedata.trvedb.avro
+  type: record
+  doc: Sent from client to server, subscribing to all messages in a particular channel.
+  fields:
+    - name: channelID
+      type: ChannelID
+    - name: startOffset
+      type: long
+
+- name: ReceiveMessage
+  namespace: org.trvedata.trvedb.avro
+  type: record
+  doc: >-
+    Sent from server to client, indicating that a message was received on a particular channel. This
+    may be a message sent by the same client, or by a different client.
+  fields:
+    - name: channelID
+      type: ChannelID
+    - name: senderID
+      type: PeerID
+    - name: senderSeqNo
+      type: long
+    - name: offset
+      type: long
+    - name: payload
+      type: bytes
+
+- name: ClientToServer
+  namespace: org.trvedata.trvedb.avro
+  type: record
+  fields:
+    - name: message
+      type: [SendMessage, SubscribeToChannel]
+
+- name: ServerToClient
+  namespace: org.trvedata.trvedb.avro
+  type: record
+  fields:
+    - name: message
+      type: [ReceiveMessage]
