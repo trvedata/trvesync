@@ -436,17 +436,28 @@ OrderedList.prototype.insertBeforeId = function(cursorId, value) {
 // Deletes the item at the given index in the list (local operation).
 OrderedList.prototype.remove = function(index) {
     var item = this.itemByIndex(index);
-    if (item === undefined) {
+    if (item === undefined)
         throw 'remove: unknown item with index ' + index;
-    }
-    if (item === null) {
+    if (item === null)
         throw 'remove: item is null with index ' + index;
-    }
     item.deleteTs = this.peer.nextId();
     item.value = null;
     this.peer.sendOperation(new DeleteOp(item.insertId, item.deleteTs));
     return this;
 };
+
+// Remove items between indexes index1 and index2 (exclusive).
+OrderedList.prototype.removeBetween = function(index1, index2) {
+    var item1 = this.itemByIndex(index1);
+    if (item1 === undefined)
+        throw 'remove: unknown item with index ' + index1;
+    if (item1 === null)
+        throw 'remove: item is null with index ' + index1;
+    if (index2 > index1 + 1)
+        this.removeAfterId(item1.insertId, index2 - index1 - 1);
+    return this;
+};
+
 // Deletes numItems items from the list (local operation). The items to be deleted are to the left of the item
 // identified by cursorId (not including the item identified by cursorId itself). If cursorId is nil, deletes
 // numItems from the end of the list. Returns the ID of the last non-deleted item before the sequence of deleted
@@ -572,6 +583,6 @@ OrderedList.prototype.removeEventListener = function(listener) {
 
 OrderedList.prototype.onOperation = function(op) {
     for (var listener of this.eventListeners) {
-        listener.onOperation(this, op);
+        listener(this, op);
     }
 }
