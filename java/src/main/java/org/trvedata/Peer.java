@@ -46,16 +46,16 @@ public class Peer<T> {
 	}
 
 	protected void sendOperation(Operation operation) {
-		if (!this.peerMatrix.localClockUpdate.isEmpty()) {
-			this.sendBuf.push(this.peerMatrix.localClockUpdate);
+		if (!this.peerMatrix.getLocalClockUpdate().isEmpty()) {
+			this.sendBuf.push(this.peerMatrix.getLocalClockUpdate());
 			this.peerMatrix.resetClockUpdate();
 		}
 		this.sendBuf.addLast(operation);
 	}
 
 	public Message makeMessage() {
-		if (!this.peerMatrix.localClockUpdate.isEmpty()) {
-			this.sendBuf.push(this.peerMatrix.localClockUpdate);
+		if (!this.peerMatrix.getLocalClockUpdate().isEmpty()) {
+			this.sendBuf.push(this.peerMatrix.getLocalClockUpdate());
 			this.peerMatrix.resetClockUpdate();
 		}
 		Message message = new Message(this.peerId, this.peerMatrix.incrementMsgCount(), this.sendBuf);

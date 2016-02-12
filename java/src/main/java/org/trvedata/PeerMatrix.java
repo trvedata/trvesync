@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 public class PeerMatrix {
-	static class MatrixEntry implements Iterable<PeerVClockEntry> {
+	private static class MatrixEntry implements Iterable<PeerVClockEntry> {
 		List<PeerVClockEntry> vClocks;
 
 		public MatrixEntry(List<PeerVClockEntry> vClocks) {
@@ -55,7 +55,7 @@ public class PeerMatrix {
 
 	private List<MatrixEntry> matrix;
 	private HashMap<String, Integer> indexByPeerId;
-	LocalClockUpdate localClockUpdate;
+	private LocalClockUpdate localClockUpdate;
 
 	public PeerMatrix(String ownPeerId) {
 		// matrix.get(peer1Index).get(peer2Index) records how many operations peer1 has seen from peer2. peer1Index is
@@ -211,6 +211,10 @@ public class PeerMatrix {
 	 */
 	protected void resetClockUpdate() {
 		this.localClockUpdate = new LocalClockUpdate();
+	}
+
+	public LocalClockUpdate getLocalClockUpdate() {
+		return localClockUpdate;
 	}
 
 	@Override

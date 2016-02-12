@@ -8,12 +8,10 @@ import java.util.List;
 import java.util.Set;
 
 public class OrderedList<T> implements Iterable<T> {
-	static class Item<T> {
-		ItemID insertId;
-		ItemID deleteTs;
+	private static class Item<T> {
+		ItemID insertId, deleteTs;
 		T value;
-		Item<T> prev;
-		Item<T> next;
+		Item<T> prev, next;
 
 		public Item(ItemID insertId, ItemID deleteTs, T value, Item<T> previous, Item<T> next) {
 			this.insertId = insertId;
@@ -25,19 +23,16 @@ public class OrderedList<T> implements Iterable<T> {
 	}
 
 	private Peer<T> peer;
-	private long lamportClock;
+	private long lamportClock = 0;
 	private HashMap<ItemID, Item<T>> itemsById;
-	private Item<T> head, tail;
+	private Item<T> head = null, tail = null;
 	private Set<CRDTEventListener> eventListeners;
 
 	public OrderedList(Peer<T> peer) {
 		if (peer == null)
 			throw new RuntimeException("OrderedList: peer must be set");
 		this.peer = peer;
-		this.lamportClock = 0;
 		this.itemsById = new HashMap<ItemID, Item<T>>();
-		this.head = null;
-		this.tail = null;
 		this.eventListeners = new HashSet<CRDTEventListener>();
 	}
 
@@ -59,7 +54,7 @@ public class OrderedList<T> implements Iterable<T> {
 	 * to the end of the list.
 	 */
 	public ItemID insertBeforeId(ItemID cursorId, T value) {
-		ItemID leftId;
+		final ItemID leftId;
 		if (cursorId == null) {
 			leftId = this.tail == null ? null : this.tail.insertId;
 		} else {
@@ -69,7 +64,7 @@ public class OrderedList<T> implements Iterable<T> {
 			leftId = rightItem.prev == null ? null : rightItem.prev.insertId;
 		}
 
-		Item<T> item = this.insertAfterId(leftId, this.peer.nextId(), value);
+		final Item<T> item = this.insertAfterId(leftId, this.peer.nextId(), value);
 		this.peer.sendOperation(new InsertOp<T>(item.prev == null ? null : item.prev.insertId, item.insertId, item.value));
 		return item.insertId;
 	}
@@ -250,7 +245,7 @@ public class OrderedList<T> implements Iterable<T> {
 	}
 
 	public List<T> toList() {
-		ArrayList<T> list = new ArrayList<T>();
+		final ArrayList<T> list = new ArrayList<T>();
 		for (T val : this)
 			list.add(val);
 		return list;
