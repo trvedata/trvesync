@@ -83,7 +83,8 @@ module CRDT
 
       @item_ids.last << nil # insertion point for appending at the end
       @cursor = [@item_ids.last.size - 1, @item_ids.size - 1] if @cursor_id.nil?
-      @lines << '' while @lines.size < @canvas_size[1]
+      @lines << '' while @lines.size < @canvas_size[1] - 1
+      @lines << "Channel: #{@peer.channel_id}"[0...@canvas_size[0]]
       screen.draw(@lines.join("\n"), [], @cursor.reverse)
       screen.debug_key(@last_key) if @last_key && @options[:debug_keys]
     end
