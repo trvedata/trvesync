@@ -85,6 +85,12 @@ module CRDT
       entry && entry.peer_id or raise "No peer ID for index #{remote_peer_index}"
     end
 
+    # Translates a local peer index into a globally unique peer ID (hex string).
+    def peer_index_to_id(peer_index)
+      entry = @matrix[0][peer_index]
+      entry && entry.peer_id or raise "No peer ID for index #{peer_index}"
+    end
+
     # Translates a globally unique peer ID into a local peer index. If the peer ID is not already
     # known, it is added to the matrix and assigned a new index.
     def peer_id_to_index(peer_id)

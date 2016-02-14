@@ -50,6 +50,7 @@ module CRDT
         'channelOffset' => channel_offset,
         'logicalTS'     => logical_ts,
         'peers'         => encode_peer_matrix,
+        'messageLog'    => encode_message_log,
         'data'          => encode_ordered_list
       }
     end
@@ -61,6 +62,7 @@ module CRDT
       self.channel_offset = state['channelOffset']
       self.logical_ts     = state['logicalTS']
       decode_peer_matrix(state['peers'])
+      decode_message_log(state['messageLog'])
       decode_ordered_list(state['data'])
     end
 
@@ -114,6 +116,46 @@ module CRDT
       peer_list
     end
 
+    # Parses an array of MessageLogEntry records, as decoded from Avro, and applies them to the
+    # current peer. The input has the following structure:
+    #
+    #     [{
+    #       # Local peerIndex of the peer that sent the message
+    #       'senderPeerIndex' => 3,
+    #
+    #       # Per-sender sequence number of the message
+    #       'senderSeqNo'     => 123,
+    #
+    #       # Server-assigned offset of the message (-1 if message is not yet confirmed by server)
+    #       'offset'          => 1234,
+    #
+    #       # Binary string of encoded message contents (output of encode_message_payload)
+    #       'payload'         => '...'
+    #      }, ...
+    #     ]
+    def decode_message_log(messages)
+      messages.each do |hash|
+        sender_id = peer_matrix.peer_index_to_id(hash['senderPeerIndex'])
+        offset = hash['offset'] unless hash['offset'] < 0
+        hash['payload'].force_encoding('BINARY')
+        message = Peer::Message.new(sender_id, hash['senderSeqNo'], offset, nil, hash['payload'])
+        message_log << message
+      end
+    end
+
+    # Transforms the current peer's message_log array into a corresponding array of MessageLogEntry
+    # records, for encoding to Avro.
+    def encode_message_log
+      message_log.map do |message|
+        {
+          'senderPeerIndex' => peer_matrix.peer_id_to_index(message.origin_peer_id),
+          'senderSeqNo'     => message.msg_count,
+          'offset'          => message.offset || -1,
+          'payload'         => message.encoded
+        }
+      end
+    end
+
     # Parses an Avro OrderedList record, and applies them to the current peer's data structure.
     # It has the following structure:
     #
@@ -163,7 +205,7 @@ module CRDT
         end
       end
 
-      encoder = Avro::IO::BinaryEncoder.new(StringIO.new)
+      encoder = Avro::IO::BinaryEncoder.new(StringIO.new(''.force_encoding('BINARY')))
       Avro::IO::DatumWriter.new(MESSAGE_SCHEMA).write({'operations' => operations}, encoder)
       encoder.writer.string
     end
@@ -214,13 +256,43 @@ module CRDT
       reader = Avro::IO::DatumReader.new(SERVER_TO_CLIENT_SCHEMA)
       message = reader.read(decoder)['message']
 
-      sender_id = bin_to_hex(message['senderID'])
-      if bin_to_hex(message['channelID']) != channel_id
-        raise "Received message on unexpected channel: #{bin_to_hex(message['channelID'])}"
-      end
+      if message['payload'] # ReceiveMessage message
+        message['payload'].force_encoding('BINARY')
+        sender_id = bin_to_hex(message['senderID'])
+        if bin_to_hex(message['channelID']) != channel_id
+          raise "Received message on unexpected channel: #{bin_to_hex(message['channelID'])}"
+        end
 
-      process_message(Peer::Message.new(sender_id, message['senderSeqNo'], message['offset'],
-        decode_message_payload(sender_id, message['payload'])))
+        existing = message_log.detect do |entry|
+          entry.origin_peer_id == sender_id && entry.msg_count == message['senderSeqNo']
+        end
+
+        if existing
+          # Message is already known to this peer (because we sent it ourselves, or because it is
+          # a duplicate delivery), so just sanity-check it and record the offset
+          if existing.offset && existing.offset != message['offset']
+            raise "Mismatched message offset: #{existing.offset} != #{message['offset']}"
+          end
+          if existing.encoded != message['payload']
+            raise "Mismatched message payload: #{bin_to_hex(existing.encoded)} != #{bin_to_hex(message['payload'])}"
+          end
+          existing.offset = message['offset']
+
+        else
+          # Message is not yet known to this peer, either because it came from someone else, or
+          # because we sent it but crashed before persisting that fact to disk.
+          decoded = decode_message_payload(sender_id, message['payload'])
+          msg_obj = Peer::Message.new(sender_id, message['senderSeqNo'], message['offset'], decoded, message['payload'])
+          message_log << msg_obj
+          process_message(msg_obj)
+        end
+
+      elsif message['lastKnownSeqNo'] # SendMessageError
+        # TODO handle this gracefully
+        raise "Server rejected message: lastKnownSeqNo = #{message['lastKnownSeqNo']}"
+      else
+        raise "Unexpected message type from server: #{message.inspect}"
+      end
     end
 
     # Takes all accumulated changes since the last call to #encode_message, and constructs
@@ -238,11 +310,13 @@ module CRDT
     #     }
     def encode_message
       message = make_message
+      message.encoded = encode_message_payload(message)
+      message_log << message
 
       message_hash = {
         'channelID'   => hex_to_bin(channel_id),
         'senderSeqNo' => message.msg_count,
-        'payload'     => encode_message_payload(message)
+        'payload'     => message.encoded
       }
 
       encoder = Avro::IO::BinaryEncoder.new(StringIO.new)

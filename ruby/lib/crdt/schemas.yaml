@@ -196,6 +196,39 @@
                         The number of messages we have received that originated on this peer. We
                         expect messages from a given peer to be sequentially numbered (with no gaps
                         in the sequence).
+    - name: messageLog
+      doc: >-
+        List of all the encoded messages that constitute the state of this document. Includes both
+        messages that originated on other peers and messages that originated locally. Also includes
+        operations that have not yet been sent to or acknowledged by the server.
+      type:
+        type: array
+        items:
+          name: MessageLogEntry
+          type: record
+          doc: One message that has been broadcast or will be broadcast on this document's channel.
+          fields:
+            - name: senderPeerIndex
+              type: long
+              doc: >-
+                The local peer index of the sender of the message (i.e. the index of the sender in
+                the PeerState's array of peers).
+            - name: senderSeqNo
+              type: long
+              doc: >-
+                The sequence number that the sender has assigned to the message. It must be strictly
+                incrementing per sender, starting at 1 for the first message.
+            - name: offset
+              type: long
+              doc: >-
+                The offset that the server has assigned to the message. It is monotonically
+                increasing but may have gaps in the sequence. Messages that have not yet been
+                committed to the server have an offset of -1.
+            - name: payload
+              type: bytes
+              doc: >-
+                The message contents, currently a Message record in Avro binary encoding (may be
+                encrypted in future).
     - name: data
       type: OrderedList
       doc: The actual data structure being maintained at this peer.
@@ -252,6 +285,18 @@
     - name: payload
       type: bytes
 
+- name: SendMessageError
+  namespace: org.trvedata.trvedb.avro
+  type: record
+  doc: >-
+    Sent from server to client if the client sent a SendMessage request with a sequence number that
+    jumped forwards or backwards.
+  fields:
+    - name: channelID
+      type: ChannelID
+    - name: lastKnownSeqNo
+      type: long
+
 - name: ClientToServer
   namespace: org.trvedata.trvedb.avro
   type: record
@@ -264,4 +309,4 @@
   type: record
   fields:
     - name: message
-      type: [ReceiveMessage]
+      type: [ReceiveMessage, SendMessageError]
