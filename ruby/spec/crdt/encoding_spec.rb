@@ -9,8 +9,8 @@ RSpec.describe CRDT::Encoding do
     TO_CLIENT = Avro::IO::DatumWriter.new(CRDT::Encoding::SERVER_TO_CLIENT_SCHEMA)
 
     def initialize(num_peers)
-      @channel_id = OpenSSL::Random.random_bytes(16).unpack('H*').first
-      @peers = (0...num_peers).map { CRDT::Peer.new(nil, channel_id: @channel_id) }
+      peer0 = CRDT::Peer.new
+      @peers = [peer0] + (1...num_peers).map {|i| CRDT::Peer.new(nil, channel_id: peer0.channel_id) }
       @offset = 0
     end
 
@@ -93,14 +93,14 @@ RSpec.describe CRDT::Encoding do
     it 'should save and reload the Lamport clock' do
       peer = CRDT::Peer.new
       peer.ordered_list.insert(0, 'a').insert(1, 'b')
-      expect(peer.logical_ts).to eq 2
+      expect(peer.logical_ts).to eq 3
 
       peer.save(@file)
       @file.rewind
       peer = CRDT::Peer.load(@file)
-      expect(peer.logical_ts).to eq 2
-      peer.ordered_list.insert(2, 'c')
       expect(peer.logical_ts).to eq 3
+      peer.ordered_list.insert(2, 'c')
+      expect(peer.logical_ts).to eq 4
     end
 
     it 'should save and reload message buffers'

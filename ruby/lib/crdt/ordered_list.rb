@@ -12,13 +12,13 @@ module CRDT
     include Enumerable
 
     # Operation to represent the insertion of an element into a list.
-    class InsertOp < Struct.new(:reference_id, :new_id, :value)
-      def logical_ts; new_id.logical_ts; end
+    class InsertOp < Struct.new(:header, :reference_id, :value)
+      def logical_ts; header.operation_id.logical_ts; end
     end
 
     # Operation to represent the deletion of an element from a list.
-    class DeleteOp < Struct.new(:delete_id, :delete_ts)
-      def logical_ts; delete_ts.logical_ts; end
+    class DeleteOp < Struct.new(:header, :delete_id)
+      def logical_ts; header.operation_id.logical_ts; end
     end
 
     # Internal structure representing a list element.
@@ -62,8 +62,10 @@ module CRDT
         left_id = right_item ? right_item.previous.insert_id : @tail.insert_id
       end
       item = insert_after_id(left_id, @peer.next_id, value)
-      op = InsertOp.new(item.previous && item.previous.insert_id,
-                        item.insert_id, item.value)
+
+      # TODO fix hard-coded access path
+      header = CRDT::OperationHeader.new(item.insert_id, peer.default_schema_id, [-1, 1])
+      op = InsertOp.new(header, item.previous && item.previous.insert_id, item.value)
       @peer.send_operation(op)
       self
     end
@@ -79,8 +81,10 @@ module CRDT
       end
 
       item = insert_after_id(left_id, @peer.next_id, value)
-      op = InsertOp.new(item.previous && item.previous.insert_id,
-                        item.insert_id, item.value)
+
+      # TODO fix hard-coded access path
+      header = CRDT::OperationHeader.new(item.insert_id, peer.default_schema_id, [-1, 1])
+      op = InsertOp.new(header, item.previous && item.previous.insert_id, item.value)
       @peer.send_operation(op)
       item.insert_id
     end
@@ -90,7 +94,10 @@ module CRDT
       item = item_by_index(index) or raise IndexError
       item.delete_ts = @peer.next_id
       item.value = nil
-      @peer.send_operation(DeleteOp.new(item.insert_id, item.delete_ts))
+
+      # TODO fix hard-coded access path
+      header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, [-1, 1])
+      @peer.send_operation(DeleteOp.new(header, item.insert_id))
       self
     end
 
@@ -110,7 +117,10 @@ module CRDT
         if item.delete_ts.nil?
           item.delete_ts = @peer.next_id
           item.value = nil
-          @peer.send_operation(DeleteOp.new(item.insert_id, item.delete_ts))
+
+          # TODO fix hard-coded access path
+          header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, [-1, 1])
+          @peer.send_operation(DeleteOp.new(header, item.insert_id))
           num_items -= 1
         end
 
@@ -130,7 +140,10 @@ module CRDT
         if item.delete_ts.nil?
           item.delete_ts = @peer.next_id
           item.value = nil
-          @peer.send_operation(DeleteOp.new(item.insert_id, item.delete_ts))
+
+          # TODO fix hard-coded access path
+          header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, [-1, 1])
+          @peer.send_operation(DeleteOp.new(header, item.insert_id))
           num_items -= 1
         end
 
@@ -145,10 +158,10 @@ module CRDT
     def apply_operation(operation)
       case operation
       when InsertOp
-        insert_after_id(operation.reference_id, operation.new_id, operation.value)
+        insert_after_id(operation.reference_id, operation.header.operation_id, operation.value)
       when DeleteOp
         item = @items_by_id[operation.delete_id] or raise IndexError
-        item.delete_ts = operation.delete_ts
+        item.delete_ts = operation.header.operation_id
         item.value = nil
       else raise "Invalid operation: #{operation}"
       end
