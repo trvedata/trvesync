@@ -10,7 +10,7 @@ RSpec.describe CRDT::Encoding do
 
     def initialize(num_peers)
       @channel_id = OpenSSL::Random.random_bytes(16).unpack('H*').first
-      @peers = (0...num_peers).map { CRDT::Peer.new(nil, @channel_id) }
+      @peers = (0...num_peers).map { CRDT::Peer.new(nil, channel_id: @channel_id) }
       @offset = 0
     end
 
