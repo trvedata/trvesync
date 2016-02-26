@@ -17,11 +17,11 @@ class LocalClockUpdate implements ClockUpdate {
 		this.updateByPeerId = new HashMap<String, PeerVClockEntry>(); // key is a peer ID (hex string)
 	}
 
-	public void addPeer(String peerId, int peerIndex) {
+	public void addPeer(String peerId, PeerIndex peerIndex) {
 		this.updateByPeerId.put(peerId, new PeerVClockEntry(peerId, peerIndex, 0));
 	}
 
-	public void recordUpdate(String peerId, int peerIndex, long msgCount) {
+	public void recordUpdate(String peerId, PeerIndex peerIndex, long msgCount) {
 		if (!this.updateByPeerId.containsKey(peerId))
 			this.updateByPeerId.put(peerId, new PeerVClockEntry(null, peerIndex, 0));
 		this.updateByPeerId.get(peerId).setMsgCount(msgCount);

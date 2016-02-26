@@ -6,10 +6,10 @@ package org.trvedata;
  */
 public class PeerVClockEntry implements Comparable<PeerVClockEntry> {
 	private String peerId;
-	private int peerIndex;
+	private PeerIndex peerIndex;
 	private long msgCount;
 
-	public PeerVClockEntry(String peerId, int peerIndex, long msgCount) {
+	public PeerVClockEntry(String peerId, PeerIndex peerIndex, long msgCount) {
 		this.peerId = peerId;
 		this.peerIndex = peerIndex;
 		this.setMsgCount(msgCount);
@@ -19,7 +19,7 @@ public class PeerVClockEntry implements Comparable<PeerVClockEntry> {
 		return peerId;
 	}
 
-	public int getPeerIndex() {
+	public PeerIndex getPeerIndex() {
 		return peerIndex;
 	}
 
@@ -42,16 +42,16 @@ public class PeerVClockEntry implements Comparable<PeerVClockEntry> {
 
 	@Override
 	public int compareTo(PeerVClockEntry o) {
-		return this.peerIndex < o.peerIndex ? -1 : this.peerIndex == o.peerIndex ? 0 : 1;
+		return this.peerIndex.idx < o.peerIndex.idx ? -1 : this.peerIndex == o.peerIndex ? 0 : 1;
 	}
 
 	@Override
 	public int hashCode() {
 		final int prime = 31;
 		int result = 1;
-		result = prime * result + (int) (getMsgCount() ^ (getMsgCount() >>> 32));
+		result = prime * result + (int) (msgCount ^ (msgCount >>> 32));
 		result = prime * result + ((peerId == null) ? 0 : peerId.hashCode());
-		result = prime * result + peerIndex;
+		result = prime * result + ((peerIndex == null) ? 0 : peerIndex.hashCode());
 		return result;
 	}
 
@@ -64,14 +64,17 @@ public class PeerVClockEntry implements Comparable<PeerVClockEntry> {
 		if (getClass() != obj.getClass())
 			return false;
 		PeerVClockEntry other = (PeerVClockEntry) obj;
-		if (getMsgCount() != other.getMsgCount())
+		if (msgCount != other.msgCount)
 			return false;
 		if (peerId == null) {
 			if (other.peerId != null)
 				return false;
 		} else if (!peerId.equals(other.peerId))
 			return false;
-		if (peerIndex != other.peerIndex)
+		if (peerIndex == null) {
+			if (other.peerIndex != null)
+				return false;
+		} else if (!peerIndex.equals(other.peerIndex))
 			return false;
 		return true;
 	}

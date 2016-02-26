@@ -13,6 +13,7 @@ import org.trvedata.ClockUpdate;
 import org.trvedata.Message;
 import org.trvedata.Operation;
 import org.trvedata.Peer;
+import org.trvedata.PeerIndex;
 import org.trvedata.PeerVClockEntry;
 
 public class PeerMatrixTest {
@@ -39,10 +40,10 @@ public class PeerMatrixTest {
             otherPeerIds.add(remote.getPeerId());
         }
 
-        assertEquals(local.getPeerMatrix().peerIdToIndex(local.getPeerId()), 0);
-        assertEquals(local.getPeerMatrix().peerIdToIndex(otherPeerIds.get(0)), 1);
-        assertEquals(local.getPeerMatrix().peerIdToIndex(otherPeerIds.get(1)), 2);
-        assertEquals(local.getPeerMatrix().peerIdToIndex(otherPeerIds.get(2)), 3);
+        assertEquals(local.getPeerMatrix().peerIdToIndex(local.getPeerId()), new PeerIndex(0));
+        assertEquals(local.getPeerMatrix().peerIdToIndex(otherPeerIds.get(0)), new PeerIndex(1));
+        assertEquals(local.getPeerMatrix().peerIdToIndex(otherPeerIds.get(1)), new PeerIndex(2));
+        assertEquals(local.getPeerMatrix().peerIdToIndex(otherPeerIds.get(2)), new PeerIndex(3));
     }
 
     @Test
@@ -62,8 +63,8 @@ public class PeerMatrixTest {
         Operation clockUpdate = messageOperations.getFirst();
         assertEquals(clockUpdate instanceof ClockUpdate, true);
         assertEquals(((ClockUpdate)clockUpdate).entries(), Arrays.asList(
-                                               new PeerVClockEntry(remote1.getPeerId(), 1, 2),
-                                               new PeerVClockEntry(remote2.getPeerId(), 2, 1)
+                                               new PeerVClockEntry(remote1.getPeerId(), new PeerIndex(1), 2),
+                                               new PeerVClockEntry(remote2.getPeerId(), new PeerIndex(2), 1)
                                                ));
     }
 
@@ -73,16 +74,16 @@ public class PeerMatrixTest {
         Peer<Character> remote1 = new Peer<Character>();
         remote1.getOrderedList().insert(0, 'a');
         local.processMessage(remote1.makeMessage());
-        assertEquals(((ClockUpdate)local.makeMessage().getOperations().getFirst()).entries(), Arrays.asList(new PeerVClockEntry(remote1.getPeerId(), 1, 1)));
+        assertEquals(((ClockUpdate)local.makeMessage().getOperations().getFirst()).entries(), Arrays.asList(new PeerVClockEntry(remote1.getPeerId(), new PeerIndex(1), 1)));
 
         Peer<Character> remote2 = new Peer<Character>();
         remote2.getOrderedList().insert(0, 'a');
         local.processMessage(remote2.makeMessage());
-        assertEquals(((ClockUpdate)local.makeMessage().getOperations().getFirst()).entries(), Arrays.asList(new PeerVClockEntry(remote2.getPeerId(), 2, 1)));
+        assertEquals(((ClockUpdate)local.makeMessage().getOperations().getFirst()).entries(), Arrays.asList(new PeerVClockEntry(remote2.getPeerId(), new PeerIndex(2), 1)));
 
         remote1.getOrderedList().insert(0, 'a');
         local.processMessage(remote1.makeMessage());
-        assertEquals(((ClockUpdate)local.makeMessage().getOperations().getFirst()).entries(), Arrays.asList(new PeerVClockEntry(null, 1, 2)));
+        assertEquals(((ClockUpdate)local.makeMessage().getOperations().getFirst()).entries(), Arrays.asList(new PeerVClockEntry(null, new PeerIndex(1), 2)));
     }
 
     @Test
@@ -106,23 +107,27 @@ public class PeerMatrixTest {
         peer1.processMessage(msg3);
         peer2.processMessage(msg3);
         peer1.processMessage(peer2.makeMessage());
+        
+        PeerIndex pIdx0 = new PeerIndex(0);
+        PeerIndex pIdx1 = new PeerIndex(1);
+        PeerIndex pIdx2 = new PeerIndex(2);
 
-        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer2.getPeerId(), 0), peer2.getPeerId());
-        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer2.getPeerId(), 1), peer1.getPeerId());
-        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer2.getPeerId(), 2), peer3.getPeerId());
+        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer2.getPeerId(), pIdx0), peer2.getPeerId());
+        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer2.getPeerId(), pIdx1), peer1.getPeerId());
+        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer2.getPeerId(), pIdx2), peer3.getPeerId());
 
-        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), 0), peer3.getPeerId());
-        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), 1), peer2.getPeerId());
-        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), 2), peer1.getPeerId());
+        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), pIdx0), peer3.getPeerId());
+        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), pIdx1), peer2.getPeerId());
+        assertEquals(peer1.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), pIdx2), peer1.getPeerId());
 
-        assertEquals(peer2.getPeerMatrix().remoteIndexToPeerId(peer1.getPeerId(), 0), peer1.getPeerId());
-        assertEquals(peer2.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), 0), peer3.getPeerId());
-        assertEquals(peer2.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), 1), peer2.getPeerId());
-        assertEquals(peer2.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), 2), peer1.getPeerId());
+        assertEquals(peer2.getPeerMatrix().remoteIndexToPeerId(peer1.getPeerId(), pIdx0), peer1.getPeerId());
+        assertEquals(peer2.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), pIdx0), peer3.getPeerId());
+        assertEquals(peer2.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), pIdx1), peer2.getPeerId());
+        assertEquals(peer2.getPeerMatrix().remoteIndexToPeerId(peer3.getPeerId(), pIdx2), peer1.getPeerId());
 
-        assertEquals(peer3.getPeerMatrix().remoteIndexToPeerId(peer1.getPeerId(), 0), peer1.getPeerId());
-        assertEquals(peer3.getPeerMatrix().remoteIndexToPeerId(peer2.getPeerId(), 0), peer2.getPeerId());
-        assertEquals(peer3.getPeerMatrix().remoteIndexToPeerId(peer2.getPeerId(), 1), peer1.getPeerId());
+        assertEquals(peer3.getPeerMatrix().remoteIndexToPeerId(peer1.getPeerId(), pIdx0), peer1.getPeerId());
+        assertEquals(peer3.getPeerMatrix().remoteIndexToPeerId(peer2.getPeerId(), pIdx0), peer2.getPeerId());
+        assertEquals(peer3.getPeerMatrix().remoteIndexToPeerId(peer2.getPeerId(), pIdx1), peer1.getPeerId());
     }
     
     @Test
