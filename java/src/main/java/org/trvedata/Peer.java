@@ -52,14 +52,15 @@ public class Peer<T> {
 
 	public Message makeMessage() {
 		this.sendClockUpdateIfNotEmpty();
-		Message message = new Message(this.peerId, this.peerMatrix.incrementMsgCount(), this.sendBuf);
+		final Message message = new Message(this.peerId, this.peerMatrix.incrementMsgCount(), this.sendBuf);
 		this.sendBuf = new ArrayDeque<Operation>();
 		return message;
 	}
 	
 	protected void sendClockUpdateIfNotEmpty() {
-		if (!this.peerMatrix.getLocalClockUpdate().isEmpty()) {
-			this.sendBuf.push(this.peerMatrix.getLocalClockUpdate());
+		final LocalClockUpdate localClockUpdate = this.peerMatrix.getLocalClockUpdate();
+		if (!localClockUpdate.isEmpty()) {
+			this.sendBuf.push(localClockUpdate);
 			this.peerMatrix.resetClockUpdate();
 		}
 	}
