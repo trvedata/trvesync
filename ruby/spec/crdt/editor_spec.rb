@@ -3,12 +3,13 @@ require 'crdt/editor'
 
 RSpec::Matchers.define :display do |expected|
   match do |screen|
-    screen.text == expected.sub('*', '') && screen.cursor == expected_cursor(expected)
+    screen.text.sub(/^[^\n]*\z/, '') == expected.sub('*', '') &&
+      screen.cursor == expected_cursor(expected)
   end
 
   failure_message do |screen|
     "expected cursor #{expected_cursor(expected).inspect} on screen #{expected.sub('*', '').inspect}\n" +
-    " but got cursor #{screen.cursor.inspect} on screen #{screen.text.inspect}"
+    " but got cursor #{screen.cursor.inspect} on screen #{screen.text.sub(/^[^\n]*\z/, '').inspect}"
   end
 
   def expected_cursor(text_with_cursor)
@@ -79,7 +80,7 @@ RSpec.describe CRDT::Editor do
 
     it 'should break on newlines' do
       keys "First\nand second line (the second wraps)\n\nNew paragraph"
-      expect(@screen).to display "First\nand second line \n(the second wraps)\n\nNew paragraph*"
+      expect(@screen).to display "First\nand second line \n(the second wraps)\n\nNew paragraph*\n"
     end
 
     it 'should rewrap after deletions' do
@@ -93,25 +94,25 @@ RSpec.describe CRDT::Editor do
   context 'cursor position' do
     it 'should jump to the next line when pressing :right at end of line' do
       keys 'Trying to come up with example text', :up
-      expect(@screen.text).to eq "Trying to come up \nwith example text\n\n\n"
+      expect(@screen.text).to match /\ATrying to come up \nwith example text\n\n\n[^\n]*\z/
       expect { keys :right }.to change { @screen.cursor }.from([0, 17]).to([1, 0])
     end
 
     it 'should jump to the previous line when pressing :left at beginning of line' do
       keys "Hi there! Isn't this fun?", :home
-      expect(@screen.text).to eq "Hi there! Isn't \nthis fun?\n\n\n"
+      expect(@screen.text).to match /\AHi there! Isn't \nthis fun\?\n\n\n[^\n]*\z/
       expect { keys :left }.to change { @screen.cursor }.from([1, 0]).to([0, 15])
     end
 
     it 'should jump to end of doc when pressing :down on the last line' do
       keys 'Blah blah blah', :home
-      expect(@screen.text).to eq "Blah blah blah\n\n\n\n"
+      expect(@screen.text).to match /\ABlah blah blah\n\n\n\n[^\n]*\z/
       expect { keys :down }.to change { @screen.cursor }.from([0, 0]).to([0, 14])
     end
 
     it 'should jump to start of doc when pressing :up on the first line' do
       keys "First line\nSecond line", :up
-      expect(@screen.text).to eq "First line\nSecond line\n\n\n"
+      expect(@screen.text).to match /\AFirst line\nSecond line\n\n\n[^\n]*\z/
       expect { keys :up }.to change { @screen.cursor }.from([0, 10]).to([0, 0])
     end
 

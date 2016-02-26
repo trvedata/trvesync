@@ -1,6 +1,15 @@
 require 'crdt'
 
 RSpec.describe CRDT::PeerMatrix do
+
+  # make_peers(n) creates n peers on the same channel
+  def make_peers(num_peers)
+    peer0 = CRDT::Peer.new
+    [peer0] + (1...num_peers).map do
+      CRDT::Peer.new(nil, channel_id: peer0.channel_id)
+    end
+  end
+
   it 'should assign sequential message numbers' do
     peer = CRDT::Peer.new
     peer.ordered_list.insert(0, :a)
@@ -12,22 +21,20 @@ RSpec.describe CRDT::PeerMatrix do
   end
 
   it 'should assign peer indexes in the order they are seen' do
-    local = CRDT::Peer.new
-    other_peer_ids = [:a, :b, :c].map do |letter|
-      remote = CRDT::Peer.new
-      remote.ordered_list.insert(0, letter)
-      local.process_message(remote.make_message)
-      remote.peer_id
+    peers = make_peers(4)
+    (1..3).each do |num|
+      peers[num].ordered_list.insert(0, num.to_s)
+      peers[0].process_message(peers[num].make_message)
     end
 
-    expect(local.peer_matrix.peer_id_to_index(local.peer_id)).to eq 0
-    expect(local.peer_matrix.peer_id_to_index(other_peer_ids[0])).to eq 1
-    expect(local.peer_matrix.peer_id_to_index(other_peer_ids[1])).to eq 2
-    expect(local.peer_matrix.peer_id_to_index(other_peer_ids[2])).to eq 3
+    expect(peers[0].peer_matrix.peer_id_to_index(peers[0].peer_id)).to eq 0
+    expect(peers[0].peer_matrix.peer_id_to_index(peers[1].peer_id)).to eq 1
+    expect(peers[0].peer_matrix.peer_id_to_index(peers[2].peer_id)).to eq 2
+    expect(peers[0].peer_matrix.peer_id_to_index(peers[3].peer_id)).to eq 3
   end
 
   it 'should generate clock update operations when messages are received' do
-    local, remote1, remote2 = CRDT::Peer.new, CRDT::Peer.new, CRDT::Peer.new
+    local, remote1, remote2 = make_peers(3)
     remote1.ordered_list.insert(0, :a).insert(1, :b)
     remote2.ordered_list.insert(0, :z)
     local.process_message(remote1.make_message)
@@ -35,7 +42,8 @@ RSpec.describe CRDT::PeerMatrix do
     remote1.ordered_list.insert(2, :c)
     local.process_message(remote1.make_message)
 
-    clock_update = local.make_message.operations.first
+    schema_update, clock_update = local.make_message.operations
+    expect(schema_update).to be_a(CRDT::SchemaUpdate)
     expect(clock_update).to be_a(CRDT::PeerMatrix::ClockUpdate)
     expect(clock_update.entries).to eq [
       CRDT::PeerMatrix::PeerVClockEntry.new(remote1.peer_id, 1, 2),
@@ -44,15 +52,13 @@ RSpec.describe CRDT::PeerMatrix do
   end
 
   it 'should include the peer ID only on the first clock update' do
-    local = CRDT::Peer.new
-    remote1 = CRDT::Peer.new
+    local, remote1, remote2 = make_peers(3)
     remote1.ordered_list.insert(0, :a)
     local.process_message(remote1.make_message)
-    expect(local.make_message.operations.first.entries).to eq [
+    expect(local.make_message.operations.grep(CRDT::PeerMatrix::ClockUpdate).first.entries).to eq [
       CRDT::PeerMatrix::PeerVClockEntry.new(remote1.peer_id, 1, 1)
     ]
 
-    remote2 = CRDT::Peer.new
     remote2.ordered_list.insert(0, :a)
     local.process_message(remote2.make_message)
     expect(local.make_message.operations.first.entries).to eq [
@@ -67,7 +73,7 @@ RSpec.describe CRDT::PeerMatrix do
   end
 
   it 'should decode remote peer indexes' do
-    peer1, peer2, peer3 = CRDT::Peer.new, CRDT::Peer.new, CRDT::Peer.new
+    peer1, peer2, peer3 = make_peers(3)
     peer1.ordered_list.insert(0, :a)
     msg1 = peer1.make_message
 
@@ -104,7 +110,7 @@ RSpec.describe CRDT::PeerMatrix do
   end
 
   it 'should track causal dependencies across peers' do
-    peer1, peer2, peer3 = CRDT::Peer.new, CRDT::Peer.new, CRDT::Peer.new
+    peer1, peer2, peer3 = make_peers(3)
     peer1.ordered_list.insert(0, :a)
     msg1 = peer1.make_message
 
@@ -120,7 +126,7 @@ RSpec.describe CRDT::PeerMatrix do
   end
 
   it 'should stop sending messages eventually after no more changes occur' do
-    peer1, peer2 = CRDT::Peer.new, CRDT::Peer.new
+    peer1, peer2 = make_peers(2)
     peer1.ordered_list.insert(0, :a)
 
     for i in 0..5  # 5 rounds should more than sufficient for peers to get into a stable state
