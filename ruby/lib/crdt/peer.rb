@@ -180,6 +180,20 @@ module CRDT
       @messages_to_send = message_log.select {|msg| msg.offset.nil? }
     end
 
+    # Called if the server complains that it does not know about some message that we had previously
+    # sent to it (perhaps due to failover to a server that is not fully up-to-date). We re-send any
+    # messages since the server's last known message in order to bring it up-to-date. NB. This will
+    # only replay messages that originated on the local peer, because the client-server protocol
+    # currently does not have a facility for backfilling other peers' mesages.
+    def replay_messages(last_known)
+      if peer_matrix.own_msg_count < last_known
+        raise "Client amnesia: latest local seqNo=#{peer_matrix.own_msg_count}, server last known=#{last_known}"
+      end
+
+      replay = message_log.select {|msg| msg.origin_peer_id == peer_id && msg.msg_count > last_known }
+      @messages_to_send.concat(replay)
+    end
+
     # Checks if there are any causally ready operations in the receive buffer that we can apply, and
     # if so, applies them. Returns false if nothing was applied, and returns true if something was
     # applied. Keep calling this method in a loop until it returns false, to ensure all ready

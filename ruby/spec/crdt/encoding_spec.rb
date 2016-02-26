@@ -153,6 +153,22 @@ RSpec.describe CRDT::Encoding do
         expect(logged_msg.offset        ).to be_nil
         expect(logged_msg.encoded       ).to eq msg['payload']
       end
+
+      it 'should retransmit messages that the server forgot about' do
+        server = MockServer.new(1)
+        server.peers[0].ordered_list.insert(0, 'a')
+        server.broadcast(0)
+        expect(server.peers[0].messages_to_send).to be_empty
+
+        channel_id = [server.peers[0].channel_id].pack('H*')
+        error = {'channelID' => channel_id, 'lastKnownSeqNo' => 0}
+        server.peers[0].receive_message(server.encode_to_client(error))
+        messages = server.peers[0].messages_to_send
+        expect(messages.size).to eq 1
+        expect(messages.first.origin_peer_id).to eq server.peers[0].peer_id
+        expect(messages.first.msg_count     ).to eq 1
+        expect(messages.first.encoded       ).to eq server.last_message.encoded
+      end
     end
   end
 

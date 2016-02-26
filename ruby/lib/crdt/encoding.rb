@@ -330,8 +330,7 @@ module CRDT
         end
 
       elsif message['lastKnownSeqNo'] # SendMessageError
-        # TODO handle this gracefully
-        raise "Server rejected message: lastKnownSeqNo = #{message['lastKnownSeqNo']}"
+        replay_messages(message['lastKnownSeqNo'])
       else
         raise "Unexpected message type from server: #{message.inspect}"
       end
