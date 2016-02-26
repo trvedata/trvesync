@@ -394,12 +394,20 @@
   fields:
     - name: channelID
       type: ChannelID
+      doc: The globally unique identifier of the channel on which the message was received.
     - name: senderID
       type: PeerID
+      doc: The globally unique identifier of the peer that sent this message.
     - name: senderSeqNo
       type: long
+      doc: >-
+        The sequence number that the sender has assigned to the message. It must be strictly
+        incrementing per sender and per channel, starting at 1 for the first message.
     - name: offset
       type: long
+      doc: >-
+        The offset that the server has assigned to the message. It is monotonically
+        increasing within a channel, but may have gaps in the sequence.
     - name: payload
       type: bytes
 
