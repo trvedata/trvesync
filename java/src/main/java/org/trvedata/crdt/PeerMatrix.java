@@ -174,7 +174,7 @@ public class PeerMatrix {
 	 * Increments the message counter for a particular peer, indicating that we have processed a message that originated
 	 * on that peer. In other words, this moves the vector clock forward.
 	 */
-	protected void processedIncomingMsg(PeerID originPeerId, long msgCount) {
+	protected void processedIncomingMsg(PeerID originPeerId, long msgCounter) {
 		PeerIndex originIndex = this.peerIdToIndex(originPeerId);
 		PeerVClockEntry localEntry = getPeerVClockList(PEER_INDEX_LOCAL).getClockEntry(originIndex);
 		PeerVClockEntry remoteEntry = getPeerVClockList(originIndex).getClockEntry(PEER_INDEX_LOCAL);
@@ -185,14 +185,14 @@ public class PeerMatrix {
 		// the lost messages from another peer.
 		if (!localEntry.getPeerId().equals(originPeerId))
 			throw new RuntimeException("processedIncomingMsg: peerid mismatch: " + localEntry.getPeerId() + " != " + originPeerId);
-		if (localEntry.getMsgCount() + 1 > msgCount)
-			throw new RuntimeException("processedIncomingMsg: msgCount for " + originPeerId + " went backwards: " + localEntry.getMsgCount() + 1 + " > " + msgCount);
-		if (localEntry.getMsgCount() + 1 < msgCount)
-			throw new RuntimeException("processedIncomingMsg: msgCount for " + originPeerId + " jumped forwards: " + localEntry.getMsgCount() + 1 + " < " + msgCount);
+		if (msgCounter < localEntry.getMsgCount() + 1)
+			throw new RuntimeException("processedIncomingMsg: msgCount for " + originPeerId + " went backwards: " + localEntry.getMsgCount() + 1 + " > " + msgCounter);
+		if (msgCounter > localEntry.getMsgCount() + 1)
+			throw new RuntimeException("processedIncomingMsg: msgCount for " + originPeerId + " jumped forwards: " + localEntry.getMsgCount() + 1 + " < " + msgCounter);
 
-		localEntry.setMsgCount(msgCount);
-		remoteEntry.setMsgCount(msgCount);
-		this.localClockUpdate.recordUpdate(originPeerId, originIndex, msgCount);
+		localEntry.setMsgCount(msgCounter);
+		remoteEntry.setMsgCount(msgCounter);
+		this.localClockUpdate.recordUpdate(originPeerId, originIndex, msgCounter);
 	}
 
 	/**

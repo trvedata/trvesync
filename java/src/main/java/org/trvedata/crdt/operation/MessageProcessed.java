@@ -1,18 +1,18 @@
 package org.trvedata.crdt.operation;
 
 public class MessageProcessed implements Operation {
-	private long msgCount;
+	private long msgCounter;
 
-	public MessageProcessed(long msgCount) {
-		this.msgCount = msgCount;
+	public MessageProcessed(long msgCounter) {
+		this.msgCounter = msgCounter;
 	}
 
-	public long getMsgCount() {
-		return msgCount;
+	public long getMsgCounter() {
+		return msgCounter;
 	}
 
 	@Override
 	public String toString() {
-		return "MessageProcessed [msgCount=" + msgCount + "]";
+		return "MessageProcessed [msgCount=" + msgCounter + "]";
 	}
 }

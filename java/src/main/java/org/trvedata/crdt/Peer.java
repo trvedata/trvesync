@@ -11,16 +11,17 @@ import org.trvedata.crdt.operation.ClockUpdate;
 import org.trvedata.crdt.operation.LocalClockUpdate;
 import org.trvedata.crdt.operation.MessageProcessed;
 import org.trvedata.crdt.operation.Operation;
+import org.trvedata.crdt.operation.MessageHistory;
 import org.trvedata.crdt.orderedlist.OrderedList;
 
 public class Peer {
-	
-	private PeerID peerId;
-	private PeerMatrix peerMatrix;
-	private CRDT crdt;
-	private long logicalTs;
-	private Deque<Operation> sendBuf;
-	private Map<PeerID, Deque<Operation>> recvBuf;
+	private final PeerID peerId;
+	private final PeerMatrix peerMatrix;
+	private final CRDT crdt;
+	private final Map<PeerID, Deque<Operation>> recvBuf = new HashMap<PeerID, Deque<Operation>>();;
+	private final MessageHistory messageHistory = new MessageHistory();
+	private Deque<Operation> sendBuf = new ArrayDeque<Operation>();
+	private long logicalTs = 0;
 
 	public Peer() {
 		this(null, null);
@@ -32,8 +33,6 @@ public class Peer {
 		this.crdt = crdt != null ? crdt : new OrderedList();
 		this.crdt.setPeer(this);
 		this.logicalTs = 0;
-		this.sendBuf = new ArrayDeque<Operation>();
-		this.recvBuf = new HashMap<PeerID, Deque<Operation>>();
 	}
 
 	protected PeerID createRandomPeerID() {
@@ -81,7 +80,7 @@ public class Peer {
 			this.recvBuf.put(message.getOriginPeerId(), new ArrayDeque<Operation>());
 		// append all elements in message.operations to this.recvBuf
 		this.recvBuf.get(message.getOriginPeerId()).addAll(message.getOperations());
-		this.recvBuf.get(message.getOriginPeerId()).add(new MessageProcessed(message.getMsgCount()));
+		this.recvBuf.get(message.getOriginPeerId()).add(new MessageProcessed(message.getMsgCounter()));
 		while (this.applyOperationsIfReady())
 			;
 	}
@@ -109,7 +108,7 @@ public class Peer {
 				return true;
 			} else if (operation instanceof MessageProcessed) {
 				MessageProcessed messageProcessed = (MessageProcessed) operation;
-				this.peerMatrix.processedIncomingMsg(readyPeerId, messageProcessed.getMsgCount());
+				this.peerMatrix.processedIncomingMsg(readyPeerId, messageProcessed.getMsgCounter());
 			} else {
 				ChangingOperation changingOp = (ChangingOperation) operation;
 				if (this.logicalTs < changingOp.logicalTs())

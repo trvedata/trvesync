@@ -23,11 +23,11 @@ public class PeerMatrixTest {
 	public void testAssignSequentialMessageNumbers() {
         OrderedListPeer<Character> peer = new OrderedListPeer<Character>();
         peer.getOrderedList().insert(0, 'a');
-        assertEquals(peer.makeMessage().getMsgCount(), 1L);
+        assertEquals(peer.makeMessage().getMsgCounter(), 1L);
         peer.getOrderedList().insert(1, 'b');
-        assertEquals(peer.makeMessage().getMsgCount(), 2L);
+        assertEquals(peer.makeMessage().getMsgCounter(), 2L);
         peer.getOrderedList().insert(2, 'c').remove(0);
-        assertEquals(peer.makeMessage().getMsgCount(), 3L);
+        assertEquals(peer.makeMessage().getMsgCounter(), 3L);
     }
 
 	@Test

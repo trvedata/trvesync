@@ -6,12 +6,12 @@ import org.trvedata.crdt.operation.Operation;
 
 public class Message {
 	private PeerID originPeerId;
-	private long msgCount;
+	private long msgCounter;
 	private Deque<Operation> operations;
 
 	public Message(PeerID originPeerId, long msgCount, Deque<Operation> operations) {
 		this.originPeerId = originPeerId;
-		this.msgCount = msgCount;
+		this.msgCounter = msgCount;
 		this.operations = operations;
 	}
 
@@ -19,8 +19,8 @@ public class Message {
 		return operations;
 	}
 
-	public long getMsgCount() {
-		return msgCount;
+	public long getMsgCounter() {
+		return msgCounter;
 	}
 
 	public PeerID getOriginPeerId() {
@@ -29,6 +29,6 @@ public class Message {
 
 	@Override
 	public String toString() {
-		return "Message [originPeerId=" + originPeerId + ", msgCount=" + msgCount + ", operations=" + operations + "]";
+		return "Message [originPeerId=" + originPeerId + ", msgCount=" + msgCounter + ", operations=" + operations + "]";
 	}
 }
