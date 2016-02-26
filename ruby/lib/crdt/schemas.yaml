@@ -272,6 +272,12 @@
         The latest logical timestamp (Lamport clock) at this peer. This value is incremented every
         time a new operation is issued at this peer, and if a greater timestamp from another peer
         is seen, this value is increased to that maximum.
+    - name: defaultSchemaID
+      type: ItemID
+      doc: >-
+        The operation ID of the SchemaUpdate message that recorded the application schema on the
+        channel. This ItemID is embedded in the header of operations so that other peers know what
+        schema the operations refer to.
     - name: peers
       doc: >-
         List of all the peers that this peer is aware of. The first entry in this array is this peer

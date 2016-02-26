@@ -46,10 +46,12 @@ module CRDT
     # Returns the state of this peer as a structure of nested hashes and lists, according to the
     # +PeerState+ schema.
     def to_avro_hash
+      raise 'Cannot save peer without default_schema_id' if default_schema_id.nil?
       {
         'channelID'     => hex_to_bin(channel_id),
         'channelOffset' => channel_offset,
         'logicalTS'     => logical_ts,
+        'defaultSchemaID' => encode_item_id(default_schema_id),
         'peers'         => encode_peer_matrix,
         'messageLog'    => encode_message_log,
         'data'          => {
@@ -62,13 +64,14 @@ module CRDT
     # Loads the state of this peer from a structure of nested hashes and lists, according to the
     # +PeerState+ schema.
     def from_avro_hash(state)
-      self.channel_id     = bin_to_hex(state['channelID'])
-      self.channel_offset = state['channelOffset']
-      self.logical_ts     = state['logicalTS']
       decode_peer_matrix(state['peers'])
       decode_message_log(state['messageLog'])
       decode_cursors(state['data']['cursors'])
       decode_ordered_list(state['data']['characters'])
+      self.channel_id     = bin_to_hex(state['channelID'])
+      self.channel_offset = state['channelOffset']
+      self.logical_ts     = state['logicalTS']
+      self.default_schema_id = decode_item_id(peer_id, state['defaultSchemaID'])
       reload!
     end
 
@@ -153,6 +156,7 @@ module CRDT
     # records, for encoding to Avro.
     def encode_message_log
       message_log.map do |message|
+        message.encoded ||= encode_message_payload(message)
         {
           'senderPeerIndex' => peer_matrix.peer_id_to_index(message.origin_peer_id),
           'senderSeqNo'     => message.msg_count,
