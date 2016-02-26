@@ -9,12 +9,9 @@ RSpec.describe CRDT::Network do
     def channel_id; '1234'; end
     def encode_subscribe_request; 'subscribe'; end
 
-    def anything_to_send?
-      !@to_send.nil?
-    end
-
-    def encode_message
-      @to_send.tap { @to_send = nil }
+    def message_send_requests
+      return [] if @to_send.nil?
+      [@to_send].tap { @to_send = nil }
     end
 
     def send_message(message)

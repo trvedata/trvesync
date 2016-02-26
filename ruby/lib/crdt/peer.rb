@@ -83,6 +83,7 @@ module CRDT
       @logical_ts = 0
       @channel_offset = -1
       @message_log = []
+      @messages_to_send = []
       @logger = options[:logger] || lambda {|msg| }
       @send_buf = []
       @recv_buf = {} # map of origin_peer_id => array of operations
@@ -150,7 +151,34 @@ module CRDT
       end
     end
 
+    # Returns an array of messages that should be sent to remote peers, including any messages that
+    # were generated previously but have not yet been confirmed as successfully sent. Resets the
+    # buffer of pending messages to send, so the same messages won't be returned again.
+    def messages_to_send
+      if anything_to_send?
+        msg = make_message
+        @messages_to_send << msg
+        @message_log << msg
+      end
+
+      ret = @messages_to_send
+      @messages_to_send = []
+      ret
+    end
+
     private
+
+    # Called when the state of the peer has been reloaded from disk.
+    def reload!
+      # A SchemaUpdate operation that might have been generated in the initializer is redundant if
+      # the peer was loaded from disk. Clear out the send buffer to avoid duplicating it. There must
+      # be a nicer way of doing this...
+      @send_buf.clear
+
+      # Any logged messages that were pending (not yet successfully broadcast to other peers) at the
+      # time the peer was shut down should be re-enqueued in the network buffer.
+      @messages_to_send = message_log.select {|msg| msg.offset.nil? }
+    end
 
     # Checks if there are any causally ready operations in the receive buffer that we can apply, and
     # if so, applies them. Returns false if nothing was applied, and returns true if something was

@@ -46,7 +46,7 @@ module CRDT
     # peer. We never call the peer directly from the EventMachine thread, to avoid having to worry
     # about thread safety on the peer.
     def poll
-      @send_queue << @peer.encode_message if @peer.anything_to_send?
+      @peer.message_send_requests.each {|req| @send_queue << req }
       while !@recv_queue.empty?
         @peer.receive_message(@recv_queue.pop(true))
       end
