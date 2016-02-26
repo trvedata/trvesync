@@ -17,6 +17,8 @@ module CRDT
     # Draw app and redraw after each keystroke
     def run
       @network.run
+      wait_for_initial_sync
+
       Dispel::Screen.open(@options) do |screen|
         resize(screen.columns, screen.lines)
         render(screen)
@@ -28,6 +30,20 @@ module CRDT
       end
     ensure
       save
+    end
+
+    # If this editor instance was started without specifying a channel ID, that means it is the one
+    # to create the channel and register the schema. In that case we don't need to wait. However, if
+    # we are joining an existing channel, we need to wait until we have at least received the schema
+    # information from the channel before we can start up the editor.
+    def wait_for_initial_sync
+      return if @peer.default_schema_id
+
+      puts 'Connecting to server...'
+      while @peer.default_schema_id.nil?
+        sleep 0.1
+        @network.poll
+      end
     end
 
     def resize(columns, lines)

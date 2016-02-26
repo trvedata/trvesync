@@ -46,10 +46,12 @@ module CRDT
     # Returns the state of this peer as a structure of nested hashes and lists, according to the
     # +PeerState+ schema.
     def to_avro_hash
+      raise 'Cannot save peer without default_schema_id' if default_schema_id.nil?
       {
         'channelID'     => hex_to_bin(channel_id),
         'channelOffset' => channel_offset,
         'logicalTS'     => logical_ts,
+        'defaultSchemaID' => encode_item_id(default_schema_id),
         'peers'         => encode_peer_matrix,
         'messageLog'    => encode_message_log,
         'data'          => {
@@ -62,13 +64,15 @@ module CRDT
     # Loads the state of this peer from a structure of nested hashes and lists, according to the
     # +PeerState+ schema.
     def from_avro_hash(state)
-      self.channel_id     = bin_to_hex(state['channelID'])
-      self.channel_offset = state['channelOffset']
-      self.logical_ts     = state['logicalTS']
       decode_peer_matrix(state['peers'])
       decode_message_log(state['messageLog'])
       decode_cursors(state['data']['cursors'])
       decode_ordered_list(state['data']['characters'])
+      self.channel_id     = bin_to_hex(state['channelID'])
+      self.channel_offset = state['channelOffset']
+      self.logical_ts     = state['logicalTS']
+      self.default_schema_id = decode_item_id(peer_id, state['defaultSchemaID'])
+      reload!
     end
 
     # Parses an array of PeerEntry records, as decoded from Avro, and applies them to a PeerMatrix
@@ -152,6 +156,7 @@ module CRDT
     # records, for encoding to Avro.
     def encode_message_log
       message_log.map do |message|
+        message.encoded ||= encode_message_payload(message)
         {
           'senderPeerIndex' => peer_matrix.peer_id_to_index(message.origin_peer_id),
           'senderSeqNo'     => message.msg_count,
@@ -325,15 +330,14 @@ module CRDT
         end
 
       elsif message['lastKnownSeqNo'] # SendMessageError
-        # TODO handle this gracefully
-        raise "Server rejected message: lastKnownSeqNo = #{message['lastKnownSeqNo']}"
+        replay_messages(message['lastKnownSeqNo'])
       else
         raise "Unexpected message type from server: #{message.inspect}"
       end
     end
 
-    # Takes all accumulated changes since the last call to #encode_message, and constructs
-    # a SendMessage command to send to a WebSocket server. It has the following structure:
+    # Takes a Peer::Message object and constructs a SendMessage to send that message to a WebSocket
+    # server. The SendMessage command has the following structure:
     #
     #     {
     #       # Identifies the channel on the server to which the message should be broadcast
@@ -345,11 +349,8 @@ module CRDT
     #       # Avro-encoded message payload as a byte string (not interpreted by the server)
     #       'payload' => '...'
     #     }
-    def encode_message
-      message = make_message
-      message.encoded = encode_message_payload(message)
-      message_log << message
-
+    def encode_message_request(message)
+      message.encoded ||= encode_message_payload(message)
       message_hash = {
         'channelID'   => hex_to_bin(channel_id),
         'senderSeqNo' => message.msg_count,
@@ -360,6 +361,12 @@ module CRDT
       writer = Avro::IO::DatumWriter.new(CLIENT_TO_SERVER_SCHEMA)
       writer.write({'message' => message_hash}, encoder)
       encoder.writer.string
+    end
+
+    # Returns a list of encoded SendMessage commands to send to a WebSocket server for all pending
+    # messages. Resets the buffer of pending messages, so the same messages won't be returned again.
+    def message_send_requests
+      messages_to_send.map {|msg| encode_message_request(msg) }
     end
 
     # Constructs a SubscribeToChannel command to send to a WebSocket server. It has the following

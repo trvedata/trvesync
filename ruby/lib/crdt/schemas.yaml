@@ -272,6 +272,12 @@
         The latest logical timestamp (Lamport clock) at this peer. This value is incremented every
         time a new operation is issued at this peer, and if a greater timestamp from another peer
         is seen, this value is increased to that maximum.
+    - name: defaultSchemaID
+      type: ItemID
+      doc: >-
+        The operation ID of the SchemaUpdate message that recorded the application schema on the
+        channel. This ItemID is embedded in the header of operations so that other peers know what
+        schema the operations refer to.
     - name: peers
       doc: >-
         List of all the peers that this peer is aware of. The first entry in this array is this peer
@@ -388,12 +394,20 @@
   fields:
     - name: channelID
       type: ChannelID
+      doc: The globally unique identifier of the channel on which the message was received.
     - name: senderID
       type: PeerID
+      doc: The globally unique identifier of the peer that sent this message.
     - name: senderSeqNo
       type: long
+      doc: >-
+        The sequence number that the sender has assigned to the message. It must be strictly
+        incrementing per sender and per channel, starting at 1 for the first message.
     - name: offset
       type: long
+      doc: >-
+        The offset that the server has assigned to the message. It is monotonically
+        increasing within a channel, but may have gaps in the sequence.
     - name: payload
       type: bytes
 
