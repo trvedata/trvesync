@@ -28,7 +28,7 @@ public class PeerMatrix {
 			return this.vClocks.size();
 		}
 
-		public boolean hasPeerId(String peerId) {
+		public boolean hasPeerId(PeerID peerId) {
 			for (PeerVClockEntry entry : this.vClocks)
 				if (entry.getPeerId().equals(peerId))
 					return true;
@@ -60,10 +60,10 @@ public class PeerMatrix {
 	private static final PeerIndex PEER_INDEX_LOCAL = new PeerIndex(0);
 	
 	private List<PeerVClockList> vectorClockMatrix;
-	private HashMap<String, PeerIndex> indexByPeerId;
+	private HashMap<PeerID, PeerIndex> indexByPeerId = new HashMap<PeerID, PeerIndex>();;
 	private LocalClockUpdate localClockUpdate;
 
-	public PeerMatrix(String ownPeerId) {
+	public PeerMatrix(PeerID ownPeerId) {
 		// matrix.get(peer1Index).get(peer2Index) records how many operations peer1 has seen from peer2. peer1Index is
 		// according to this peer's local index assignment (see indexByPeerId); peer2Index is according to peer1's index
 		// assignment.
@@ -71,7 +71,6 @@ public class PeerMatrix {
 		this.vectorClockMatrix.add(new PeerVClockList(Arrays.asList(new PeerVClockEntry(ownPeerId, PEER_INDEX_LOCAL, 0))));
 		// Key: peer ID (as hex string), Value: the index that this peer has locally assigned to that peer ID. The
 		// indexes must be strictly sequential.
-		this.indexByPeerId = new HashMap<String, PeerIndex>();
 		this.indexByPeerId.put(ownPeerId, PEER_INDEX_LOCAL);
 		// used to record any operations we see from other peers, so that we can broadcast vector clock diffs to others.
 		this.localClockUpdate = new LocalClockUpdate();
@@ -80,7 +79,7 @@ public class PeerMatrix {
 	/**
 	 * Returns the peer ID (globally unique hex string) for the local device.
 	 */
-	public String ownPeerId() {
+	public PeerID ownPeerId() {
 		return getPeerVClockList(PEER_INDEX_LOCAL).getClockEntry(PEER_INDEX_LOCAL).getPeerId();
 	}
 	
@@ -101,7 +100,7 @@ public class PeerMatrix {
 	 * method translates remotePeerIndex (which is meaningful only in the context of messages from originPeerId) to the
 	 * corresponding peer Id (a hex string that is globally unique).
 	 */
-	public String remoteIndexToPeerId(String originPeerId, PeerIndex remotePeerIndex) {
+	public PeerID remoteIndexToPeerId(PeerID originPeerId, PeerIndex remotePeerIndex) {
 		PeerVClockEntry entry = getPeerVClockList(this.peerIdToIndex(originPeerId)).getClockEntry(remotePeerIndex);
 		if (entry == null)
 			throw new RuntimeException("remoteIndexToPeerId: No peer Id for index " + remotePeerIndex);
@@ -112,7 +111,7 @@ public class PeerMatrix {
 	 * Translates a globally unique peer ID into a local peer index. If the peer ID is not already known, it is added to
 	 * the matrix and assigned a new index.
 	 */
-	public PeerIndex peerIdToIndex(String peerId) {
+	public PeerIndex peerIdToIndex(PeerID peerId) {
 		PeerIndex index = this.indexByPeerId.get(peerId);
 		if (index != null)
 			return index;
@@ -134,7 +133,7 @@ public class PeerMatrix {
 	 * this method registers the mapping, so that subsequent calls to remoteIndexToPeerId can resolve the index. Returns
 	 * the appropriate PeerVClockEntry.
 	 */
-	protected PeerVClockEntry peerIndexMapping(String originPeerId, String subjectPeerId, PeerIndex subjectPeerIndex) {
+	protected PeerVClockEntry peerIndexMapping(PeerID originPeerId, PeerID subjectPeerId, PeerIndex subjectPeerIndex) {
 		PeerVClockList vclocks = getPeerVClockList(this.peerIdToIndex(originPeerId));
 		PeerVClockEntry entry = vclocks.getClockEntry(subjectPeerIndex);
 		if (entry != null) {
@@ -155,7 +154,7 @@ public class PeerMatrix {
 	 * originPeerId has received various operations from other peers, and also documents which peer indexes originPeerId
 	 * has assigned to those peers.
 	 */
-	protected void applyClockUpdate(String originPeerId, ClockUpdate update) {
+	protected void applyClockUpdate(PeerID originPeerId, ClockUpdate update) {
 		for (PeerVClockEntry newEntry : update.entries()) {
 			PeerVClockEntry oldEntry = this.peerIndexMapping(originPeerId, newEntry.getPeerId(), newEntry.getPeerIndex());
 			if (oldEntry.getMsgCount() > newEntry.getMsgCount())
@@ -175,7 +174,7 @@ public class PeerMatrix {
 	 * Increments the message counter for a particular peer, indicating that we have processed a message that originated
 	 * on that peer. In other words, this moves the vector clock forward.
 	 */
-	protected void processedIncomingMsg(String originPeerId, long msgCount) {
+	protected void processedIncomingMsg(PeerID originPeerId, long msgCount) {
 		PeerIndex originIndex = this.peerIdToIndex(originPeerId);
 		PeerVClockEntry localEntry = getPeerVClockList(PEER_INDEX_LOCAL).getClockEntry(originIndex);
 		PeerVClockEntry remoteEntry = getPeerVClockList(originIndex).getClockEntry(PEER_INDEX_LOCAL);
@@ -184,7 +183,7 @@ public class PeerMatrix {
 		// scenario in which a peer sends some messages and then crashes before writing its state to stable storage, so
 		// when it comes back up, it reverts back to a lower msgCount. We should detect when this happens, and replay
 		// the lost messages from another peer.
-		if (localEntry.getPeerId() != originPeerId)
+		if (!localEntry.getPeerId().equals(originPeerId))
 			throw new RuntimeException("processedIncomingMsg: peerid mismatch: " + localEntry.getPeerId() + " != " + originPeerId);
 		if (localEntry.getMsgCount() + 1 > msgCount)
 			throw new RuntimeException("processedIncomingMsg: msgCount for " + originPeerId + " went backwards: " + localEntry.getMsgCount() + 1 + " > " + msgCount);
@@ -203,20 +202,20 @@ public class PeerMatrix {
 	 * We assume that pairwise communication between peers is totally ordered, i.e. that messages from one particular
 	 * peer are received in the same order as they were sent.
 	 */
-	public boolean isCausallyReady(String remotePeerId) {
-		Map<String, Long> localVclock = new HashMap<String, Long>();
+	public boolean isCausallyReady(PeerID remotePeerId) {
+		Map<PeerID, Long> localVclock = new HashMap<PeerID, Long>();
 		for (PeerVClockEntry entry : getPeerVClockList(PEER_INDEX_LOCAL)) {
 			localVclock.put(entry.getPeerId(), entry.getMsgCount());
 		}
 
-		Map<String, Long> remoteVclock = new HashMap<String, Long>();
+		Map<PeerID, Long> remoteVclock = new HashMap<PeerID, Long>();
 		for (PeerVClockEntry entry : getPeerVClockList(this.peerIdToIndex(remotePeerId))) {
 			remoteVclock.put(entry.getPeerId(), entry.getMsgCount());
 		}
 
-		HashSet<String> allPeerIds = new HashSet<String>(localVclock.keySet());
+		HashSet<PeerID> allPeerIds = new HashSet<PeerID>(localVclock.keySet());
 		allPeerIds.addAll(remoteVclock.keySet());
-		for (String peerId : allPeerIds) {
+		for (PeerID peerId : allPeerIds) {
 			Long local = localVclock.get(peerId);
 			Long remote = remoteVclock.get(peerId);
 			if ((!peerId.equals(remotePeerId)) && (local == null ? 0L : local) < (remote == null ? 0L : remote))

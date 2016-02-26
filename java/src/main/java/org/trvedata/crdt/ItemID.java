@@ -2,9 +2,9 @@ package org.trvedata.crdt;
 
 public class ItemID implements Comparable<ItemID> {
 	private long logicalTs;
-	private String peerId;
+	private PeerID peerId;
 
-	public ItemID(long logicalTs, String peerId) {
+	public ItemID(long logicalTs, PeerID peerId) {
 		this.logicalTs = logicalTs;
 		this.peerId = peerId;
 	}

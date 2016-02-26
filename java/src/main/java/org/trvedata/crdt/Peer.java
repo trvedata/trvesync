@@ -15,35 +15,35 @@ import org.trvedata.crdt.orderedlist.OrderedList;
 
 public class Peer {
 	
-	private String peerId;
+	private PeerID peerId;
 	private PeerMatrix peerMatrix;
 	private CRDT crdt;
 	private long logicalTs;
 	private Deque<Operation> sendBuf;
-	private Map<String, Deque<Operation>> recvBuf;
+	private Map<PeerID, Deque<Operation>> recvBuf;
 
 	public Peer() {
 		this(null, null);
 	}
 	
 	public Peer(String peerId, CRDT crdt) {
-		this.peerId = peerId != null ? peerId : this.createRandomPeerID();
+		this.peerId = peerId != null ? new PeerID(peerId) : this.createRandomPeerID();
 		this.peerMatrix = new PeerMatrix(this.peerId);
 		this.crdt = crdt != null ? crdt : new OrderedList();
 		this.crdt.setPeer(this);
 		this.logicalTs = 0;
 		this.sendBuf = new ArrayDeque<Operation>();
-		this.recvBuf = new HashMap<String, Deque<Operation>>();
+		this.recvBuf = new HashMap<PeerID, Deque<Operation>>();
 	}
 
-	protected String createRandomPeerID() {
+	protected PeerID createRandomPeerID() {
 		SecureRandom rand = new SecureRandom();
 		byte[] bytes = new byte[32];
 		String ret = "";
 		rand.nextBytes(bytes);
 		for (byte b : bytes)
 			ret += String.format("%02x", b);
-		return ret;
+		return new PeerID(ret);
 	}
 
 	public boolean anythingToSend() {
@@ -87,9 +87,9 @@ public class Peer {
 	}
 
 	protected boolean applyOperationsIfReady() {
-		String readyPeerId = null;
+		PeerID readyPeerId = null;
 		Deque<Operation> readyOps = null;
-		for (String peerId : this.recvBuf.keySet()) {
+		for (PeerID peerId : this.recvBuf.keySet()) {
 			if (this.peerMatrix.isCausallyReady(peerId) && !this.recvBuf.get(peerId).isEmpty()) {
 				readyPeerId = peerId;
 				readyOps = this.recvBuf.get(peerId);
@@ -129,7 +129,7 @@ public class Peer {
 		return peerMatrix;
 	}
 
-	public String getPeerId() {
+	public PeerID getPeerId() {
 		return peerId;
 	}
 

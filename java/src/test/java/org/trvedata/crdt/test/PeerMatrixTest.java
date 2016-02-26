@@ -10,7 +10,7 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 import org.trvedata.crdt.Message;
-import org.trvedata.crdt.Peer;
+import org.trvedata.crdt.PeerID;
 import org.trvedata.crdt.PeerIndex;
 import org.trvedata.crdt.PeerVClockEntry;
 import org.trvedata.crdt.operation.ClockUpdate;
@@ -33,7 +33,7 @@ public class PeerMatrixTest {
 	@Test
     public void testAssignPeerIndexesInOrderSeen() {
         OrderedListPeer<Character> local = new OrderedListPeer<Character>();
-        List<String> otherPeerIds = new ArrayList<String>();
+        List<PeerID> otherPeerIds = new ArrayList<PeerID>();
         for (char letter : new char[] {'a', 'b', 'c'}) {
             OrderedListPeer<Character> remote = new OrderedListPeer<Character>();
             remote.getOrderedList().insert(0, letter);

@@ -5,11 +5,11 @@ import java.util.Deque;
 import org.trvedata.crdt.operation.Operation;
 
 public class Message {
-	private String originPeerId;
+	private PeerID originPeerId;
 	private long msgCount;
 	private Deque<Operation> operations;
 
-	public Message(String originPeerId, long msgCount, Deque<Operation> operations) {
+	public Message(PeerID originPeerId, long msgCount, Deque<Operation> operations) {
 		this.originPeerId = originPeerId;
 		this.msgCount = msgCount;
 		this.operations = operations;
@@ -23,7 +23,7 @@ public class Message {
 		return msgCount;
 	}
 
-	public String getOriginPeerId() {
+	public PeerID getOriginPeerId() {
 		return originPeerId;
 	}
 

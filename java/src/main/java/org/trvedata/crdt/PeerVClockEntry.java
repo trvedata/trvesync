@@ -5,17 +5,17 @@ package org.trvedata.crdt;
  * locally assigned to that peer; and msgCount is the number of messages we have received from that peer.
  */
 public class PeerVClockEntry implements Comparable<PeerVClockEntry> {
-	private String peerId;
+	private PeerID peerId;
 	private PeerIndex peerIndex;
 	private long msgCount;
 
-	public PeerVClockEntry(String peerId, PeerIndex peerIndex, long msgCount) {
+	public PeerVClockEntry(PeerID peerId, PeerIndex peerIndex, long msgCount) {
 		this.peerId = peerId;
 		this.peerIndex = peerIndex;
 		this.setMsgCount(msgCount);
 	}
 
-	public String getPeerId() {
+	public PeerID getPeerId() {
 		return peerId;
 	}
 

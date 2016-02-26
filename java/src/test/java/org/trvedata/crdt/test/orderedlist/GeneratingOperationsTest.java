@@ -10,6 +10,7 @@ import java.util.List;
 
 import org.junit.Test;
 import org.trvedata.crdt.ItemID;
+import org.trvedata.crdt.PeerID;
 import org.trvedata.crdt.operation.Operation;
 import org.trvedata.crdt.orderedlist.DeleteOp;
 import org.trvedata.crdt.orderedlist.InsertOp;
@@ -27,7 +28,7 @@ public class GeneratingOperationsTest {
 		OrderedListPeer<Character> peer = new OrderedListPeer<Character>("peer1");
 		peer.getOrderedList().insert(0, 'a');
 		assertEquals(new ArrayList<Operation>(peer.makeMessage().getOperations()),
-				Arrays.asList(new InsertOp<Character>(null, new ItemID(1, "peer1"), 'a')));
+				Arrays.asList(new InsertOp<Character>(null, new ItemID(1, new PeerID("peer1")), 'a')));
 	}
 
 	@Test
@@ -54,19 +55,18 @@ public class GeneratingOperationsTest {
 		assertTrue(ops.get(0) instanceof InsertOp<?>);
 		assertEquals(((InsertOp) (ops.get(0))).getReferenceId(), null);
 		assertTrue(ops.get(1) instanceof InsertOp<?>);
-		assertEquals(((InsertOp) (ops.get(1))).getReferenceId(), new ItemID(1, "peer1"));
+		assertEquals(((InsertOp) (ops.get(1))).getReferenceId(), new ItemID(1, new PeerID("peer1")));
 		assertTrue(ops.get(2) instanceof InsertOp<?>);
-		assertEquals(((InsertOp) (ops.get(2))).getReferenceId(), new ItemID(2, "peer1"));
+		assertEquals(((InsertOp) (ops.get(2))).getReferenceId(), new ItemID(2, new PeerID("peer1")));
 		assertTrue(ops.get(3) instanceof DeleteOp);
-		assertEquals(((DeleteOp) (ops.get(3))).getDeleteId(), new ItemID(2, "peer1"));
+		assertEquals(((DeleteOp) (ops.get(3))).getDeleteId(), new ItemID(2, new PeerID("peer1")));
 	}
 
 	@Test
 	public void testIncludeDetailsOfRemoveOperation() { // should include details of a remove operation
 		OrderedListPeer<Character> peer = new OrderedListPeer<Character>("peer1");
 		peer.getOrderedList().insert(0, 'a').remove(0);
-		assertEquals(peer.makeMessage().getOperations().pollLast(), new DeleteOp(new ItemID(1, "peer1"), new ItemID(2,
-				"peer1")));
+		assertEquals(peer.makeMessage().getOperations().pollLast(), new DeleteOp(new ItemID(1, new PeerID("peer1")), new ItemID(2, new PeerID("peer1"))));
 	}
 
 	@Test
