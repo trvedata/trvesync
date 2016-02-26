@@ -1,4 +1,4 @@
-package org.trvedata;
+package org.trvedata.crdt;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -7,6 +7,9 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+
+import org.trvedata.crdt.operation.ClockUpdate;
+import org.trvedata.crdt.operation.LocalClockUpdate;
 
 public class PeerMatrix {
 	

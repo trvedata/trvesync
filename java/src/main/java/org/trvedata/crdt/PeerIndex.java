@@ -1,4 +1,4 @@
-package org.trvedata;
+package org.trvedata.crdt;
 
 public class PeerIndex {
 	int idx;

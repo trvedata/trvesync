@@ -1,6 +1,6 @@
-package org.trvedata;
+package org.trvedata.crdt;
 
-public class ItemID {
+public class ItemID implements Comparable<ItemID> {
 	private long logicalTs;
 	private String peerId;
 
@@ -9,7 +9,7 @@ public class ItemID {
 		this.peerId = peerId;
 	}
 
-	int compareTo(ItemID other) {
+	public int compareTo(ItemID other) {
 		if (this.logicalTs > other.logicalTs)
 			return 1;
 		if (this.logicalTs < other.logicalTs)

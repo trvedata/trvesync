@@ -1,4 +1,4 @@
-package org.trvedata;
+package org.trvedata.crdt.orderedlist;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -7,7 +7,14 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-public class OrderedList<T> implements Iterable<T> {
+import org.trvedata.crdt.CRDT;
+import org.trvedata.crdt.CRDTEventListener;
+import org.trvedata.crdt.ItemID;
+import org.trvedata.crdt.Peer;
+import org.trvedata.crdt.operation.ChangingOperation;
+import org.trvedata.crdt.operation.Operation;
+
+public class OrderedList<T> extends CRDT implements Iterable<T> {
 	private static class Item<T> {
 		ItemID insertId, deleteTs;
 		T value;
@@ -22,16 +29,11 @@ public class OrderedList<T> implements Iterable<T> {
 		}
 	}
 
-	private Peer<T> peer;
-	private long lamportClock = 0;
 	private HashMap<ItemID, Item<T>> itemsById;
 	private Item<T> head = null, tail = null;
 	private Set<CRDTEventListener> eventListeners;
 
-	public OrderedList(Peer<T> peer) {
-		if (peer == null)
-			throw new RuntimeException("OrderedList: peer must be set");
-		this.peer = peer;
+	public OrderedList() {
 		this.itemsById = new HashMap<ItemID, Item<T>>();
 		this.eventListeners = new HashSet<CRDTEventListener>();
 	}
@@ -138,7 +140,7 @@ public class OrderedList<T> implements Iterable<T> {
 	 * Applies a remote operation to a local copy of the data structure. The operation must be causally ready, as per
 	 * the data structure's vector clock.
 	 */
-	protected void applyOperation(ChangingOperation operation) {
+	public void applyOperation(ChangingOperation operation) {
 		if (operation instanceof InsertOp) {
 			@SuppressWarnings("unchecked")
 			InsertOp<T> insertOp = (InsertOp<T>) operation;

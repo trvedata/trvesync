@@ -1,6 +1,8 @@
-package org.trvedata;
+package org.trvedata.crdt;
 
 import java.util.Deque;
+
+import org.trvedata.crdt.operation.Operation;
 
 public class Message {
 	private String originPeerId;

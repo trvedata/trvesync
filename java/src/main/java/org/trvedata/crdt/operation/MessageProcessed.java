@@ -1,4 +1,4 @@
-package org.trvedata;
+package org.trvedata.crdt.operation;
 
 public class MessageProcessed implements Operation {
 	private long msgCount;

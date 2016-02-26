@@ -1,4 +1,4 @@
-package org.trvedata.test;
+package org.trvedata.crdt.test;
 
 import static org.junit.Assert.assertEquals;
 
@@ -9,18 +9,19 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.trvedata.ClockUpdate;
-import org.trvedata.Message;
-import org.trvedata.Operation;
-import org.trvedata.Peer;
-import org.trvedata.PeerIndex;
-import org.trvedata.PeerVClockEntry;
+import org.trvedata.crdt.Message;
+import org.trvedata.crdt.Peer;
+import org.trvedata.crdt.PeerIndex;
+import org.trvedata.crdt.PeerVClockEntry;
+import org.trvedata.crdt.operation.ClockUpdate;
+import org.trvedata.crdt.operation.Operation;
+import org.trvedata.crdt.orderedlist.OrderedListPeer;
 
 public class PeerMatrixTest {
 	
 	@Test
 	public void testAssignSequentialMessageNumbers() {
-        Peer<Character> peer = new Peer<Character>();
+        OrderedListPeer<Character> peer = new OrderedListPeer<Character>();
         peer.getOrderedList().insert(0, 'a');
         assertEquals(peer.makeMessage().getMsgCount(), 1L);
         peer.getOrderedList().insert(1, 'b');
@@ -31,10 +32,10 @@ public class PeerMatrixTest {
 
 	@Test
     public void testAssignPeerIndexesInOrderSeen() {
-        Peer<Character> local = new Peer<Character>();
+        OrderedListPeer<Character> local = new OrderedListPeer<Character>();
         List<String> otherPeerIds = new ArrayList<String>();
         for (char letter : new char[] {'a', 'b', 'c'}) {
-            Peer<Character> remote = new Peer<Character>();
+            OrderedListPeer<Character> remote = new OrderedListPeer<Character>();
             remote.getOrderedList().insert(0, letter);
             local.processMessage(remote.makeMessage());
             otherPeerIds.add(remote.getPeerId());
@@ -48,9 +49,9 @@ public class PeerMatrixTest {
 
     @Test
     public void testGenerateClockUpdateWhenMessagesReceived() {
-        Peer<Character> local = new Peer<Character>();
-        Peer<Character> remote1 = new Peer<Character>();
-        Peer<Character> remote2 = new Peer<Character>();
+    	OrderedListPeer<Character> local = new OrderedListPeer<Character>();
+    	OrderedListPeer<Character> remote1 = new OrderedListPeer<Character>();
+    	OrderedListPeer<Character> remote2 = new OrderedListPeer<Character>();
         remote1.getOrderedList().insert(0, 'a').insert(1, 'b');
         remote2.getOrderedList().insert(0, 'z');
         local.processMessage(remote1.makeMessage());
@@ -70,13 +71,13 @@ public class PeerMatrixTest {
 
     @Test
     public void testIncludePeerIdOnlyOnFirstClockUpdate() {
-        Peer<Character> local = new Peer<Character>();
-        Peer<Character> remote1 = new Peer<Character>();
+        OrderedListPeer<Character> local = new OrderedListPeer<Character>();
+        OrderedListPeer<Character> remote1 = new OrderedListPeer<Character>();
         remote1.getOrderedList().insert(0, 'a');
         local.processMessage(remote1.makeMessage());
         assertEquals(((ClockUpdate)local.makeMessage().getOperations().getFirst()).entries(), Arrays.asList(new PeerVClockEntry(remote1.getPeerId(), new PeerIndex(1), 1)));
 
-        Peer<Character> remote2 = new Peer<Character>();
+        OrderedListPeer<Character> remote2 = new OrderedListPeer<Character>();
         remote2.getOrderedList().insert(0, 'a');
         local.processMessage(remote2.makeMessage());
         assertEquals(((ClockUpdate)local.makeMessage().getOperations().getFirst()).entries(), Arrays.asList(new PeerVClockEntry(remote2.getPeerId(), new PeerIndex(2), 1)));
@@ -88,9 +89,9 @@ public class PeerMatrixTest {
 
     @Test
     public void testDecodeRemotePeerIndexes() {
-        Peer<Character> peer1 = new Peer<Character>();
-        Peer<Character> peer2 = new Peer<Character>();
-        Peer<Character> peer3 = new Peer<Character>();
+        OrderedListPeer<Character> peer1 = new OrderedListPeer<Character>();
+        OrderedListPeer<Character> peer2 = new OrderedListPeer<Character>();
+        OrderedListPeer<Character> peer3 = new OrderedListPeer<Character>();
         peer1.getOrderedList().insert(0, 'a');
         Message msg1 = peer1.makeMessage();
 
@@ -132,9 +133,9 @@ public class PeerMatrixTest {
     
     @Test
     public void testTrackCausalDependenciesAcrossPeers() {
-        Peer<Character> peer1 = new Peer<Character>();
-        Peer<Character> peer2 = new Peer<Character>();
-        Peer<Character> peer3 = new Peer<Character>();
+        OrderedListPeer<Character> peer1 = new OrderedListPeer<Character>();
+        OrderedListPeer<Character> peer2 = new OrderedListPeer<Character>();
+        OrderedListPeer<Character> peer3 = new OrderedListPeer<Character>();
 
         peer1.getOrderedList().insert(0, 'a');
         Message msg1 = peer1.makeMessage();
@@ -152,8 +153,8 @@ public class PeerMatrixTest {
 
     @Test
     public void testDontSendMessagesIndefinitelyAfterNoMoreChanges() {
-        Peer<Character> peer1 = new Peer<Character>();
-        Peer<Character> peer2 = new Peer<Character>();
+        OrderedListPeer<Character> peer1 = new OrderedListPeer<Character>();
+        OrderedListPeer<Character> peer2 = new OrderedListPeer<Character>();
 
         peer1.getOrderedList().insert(0, 'a');
 

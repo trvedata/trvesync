@@ -1,4 +1,4 @@
-package org.trvedata;
+package org.trvedata.crdt;
 
 import java.security.SecureRandom;
 import java.util.ArrayDeque;
@@ -6,22 +6,31 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.Map;
 
-public class Peer<T> {
+import org.trvedata.crdt.operation.ChangingOperation;
+import org.trvedata.crdt.operation.ClockUpdate;
+import org.trvedata.crdt.operation.LocalClockUpdate;
+import org.trvedata.crdt.operation.MessageProcessed;
+import org.trvedata.crdt.operation.Operation;
+import org.trvedata.crdt.orderedlist.OrderedList;
+
+public class Peer {
+	
 	private String peerId;
 	private PeerMatrix peerMatrix;
-	private OrderedList<T> orderedList;
+	private CRDT crdt;
 	private long logicalTs;
 	private Deque<Operation> sendBuf;
 	private Map<String, Deque<Operation>> recvBuf;
 
 	public Peer() {
-		this(null);
+		this(null, null);
 	}
-
-	public Peer(String peerId) {
+	
+	public Peer(String peerId, CRDT crdt) {
 		this.peerId = peerId != null ? peerId : this.createRandomPeerID();
 		this.peerMatrix = new PeerMatrix(this.peerId);
-		this.orderedList = new OrderedList<T>(this);
+		this.crdt = crdt != null ? crdt : new OrderedList();
+		this.crdt.setPeer(this);
 		this.logicalTs = 0;
 		this.sendBuf = new ArrayDeque<Operation>();
 		this.recvBuf = new HashMap<String, Deque<Operation>>();
@@ -41,11 +50,11 @@ public class Peer<T> {
 		return !this.sendBuf.isEmpty();
 	}
 
-	protected ItemID nextId() {
+	public ItemID nextId() {
 		return new ItemID(++this.logicalTs, this.peerId);
 	}
 
-	protected void sendOperation(Operation operation) {
+	public void sendOperation(Operation operation) {
 		this.sendClockUpdateIfNotEmpty();
 		this.sendBuf.addLast(operation);
 	}
@@ -105,15 +114,15 @@ public class Peer<T> {
 				ChangingOperation changingOp = (ChangingOperation) operation;
 				if (this.logicalTs < changingOp.logicalTs())
 					this.logicalTs = changingOp.logicalTs();
-				this.getOrderedList().applyOperation(changingOp);
+				this.getCRDT().applyOperation(changingOp);
 			}
 		}
 		readyOps.clear();
 		return true; // Finished this peer, now another peer's operations might be causally ready
 	}
 
-	public OrderedList<T> getOrderedList() {
-		return orderedList;
+	public CRDT getCRDT() {
+		return crdt;
 	}
 
 	public PeerMatrix getPeerMatrix() {
@@ -126,7 +135,7 @@ public class Peer<T> {
 
 	@Override
 	public String toString() {
-		return "Peer [peerId=" + peerId + ", peerMatrix=" + peerMatrix + ", orderedList=" + orderedList + ", logicalTs=" + logicalTs + ", sendBuf="
+		return "Peer [peerId=" + peerId + ", peerMatrix=" + peerMatrix + ", orderedList=" + crdt + ", logicalTs=" + logicalTs + ", sendBuf="
 				+ sendBuf + ", recvBuf=" + recvBuf + "]";
 	}
 }

@@ -1,16 +1,19 @@
-package org.trvedata;
+package org.trvedata.crdt.operation;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 
+import org.trvedata.crdt.PeerIndex;
+import org.trvedata.crdt.PeerVClockEntry;
+
 /**
  * A clock update is a special kind of operation, which can be broadcast from one peer to other peers. When a
  * ClockUpdate is sent, it reflects the messages received by the sender (i.e. which operations the sender has previously
  * received from other peers). This is used to track the causal dependencies between operations.
  */
-class LocalClockUpdate implements ClockUpdate {
+public class LocalClockUpdate implements ClockUpdate {
 	private HashMap<String, PeerVClockEntry> updateByPeerId;
 
 	public LocalClockUpdate() {

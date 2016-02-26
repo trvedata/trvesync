@@ -1,4 +1,4 @@
-package org.trvedata;
+package org.trvedata.crdt;
 
 /**
  * One entry in a vector clock. The peerId is the hex string representing a peer; the peerIndex is the number we have

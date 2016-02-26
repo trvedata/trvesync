@@ -1,4 +1,7 @@
-package org.trvedata;
+package org.trvedata.crdt.orderedlist;
+
+import org.trvedata.crdt.ItemID;
+import org.trvedata.crdt.operation.ChangingOperation;
 
 public class DeleteOp implements ChangingOperation {
 	private ItemID deleteId;

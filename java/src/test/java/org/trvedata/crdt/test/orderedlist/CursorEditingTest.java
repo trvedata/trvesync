@@ -1,4 +1,4 @@
-package org.trvedata.test.orderedlist;
+package org.trvedata.crdt.test.orderedlist;
 
 import static org.junit.Assert.assertEquals;
 
@@ -6,16 +6,16 @@ import java.util.Arrays;
 
 import org.junit.Before;
 import org.junit.Test;
-import org.trvedata.ItemID;
-import org.trvedata.Peer;
+import org.trvedata.crdt.ItemID;
+import org.trvedata.crdt.orderedlist.OrderedListPeer;
 
 public class CursorEditingTest {
-	Peer<Character> peer;
+	OrderedListPeer<Character> peer;
 	ItemID[] ids;
 
 	@Before
 	public void setUp() {
-		peer = new Peer<Character>("peer1");
+		peer = new OrderedListPeer<Character>("peer1");
 		char[] chars = { 'a', 'b', 'c', 'd', 'e', 'f' };
 		ids = new ItemID[chars.length];
 		for (int i = 0; i < chars.length; i++)
