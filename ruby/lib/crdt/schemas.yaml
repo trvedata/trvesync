@@ -24,6 +24,34 @@
         peers. The ordering of this array is different on different peers, so the index is
         translated from the remote view to the local view on arrival.
 
+- name: OperationHeader
+  type: record
+  doc: Fields that are included with every CRDT operation.
+  fields:
+    - name: logicalTS
+      type: long
+      doc: >-
+        Counter portion of the logical timestamp (Lamport timestamp) for this operation. By
+        combining it with the peerIndex of the sender of the operation, recipients can construct the
+        ItemID for the operation. If the operation creates an object (e.g. inserts an element into
+        a list), this ItemID becomes the unique identifier for the created object.
+    - name: schemaID
+      type: ItemID
+      doc: >-
+        Reference to a prior SchemaUpdate operation that defined the application data schema being
+        used in this operation. The accessPath is resolved with respect to this schema.
+    - name: accessPath
+      type:
+        type: array
+        items: long
+      doc: >-
+        Sequence of numbers that leads to the particular object being modified in the operation. If
+        the first element is -1, the traversal begins from the root object of the document;
+        otherwise the first two elements constitute an ItemID (logicalTS and peerIndex) identifying
+        an object anywhere in the document from which the traversal begins. Subsequent elements are
+        interpreted based on the schema of the current traversal object: if it is a record, the
+        number indicates the field number to use for the next step of the traversal; other types TBD.
+
 - name: ClockUpdate
   type: record
   doc: >-
@@ -62,33 +90,83 @@
               type: long
               doc: Highest message sequence number that the sender has seen from this peer.
 
+- name: SchemaUpdate
+  type: record
+  doc: >-
+    A SchemaUpdate operation is broadcast when a new version of the application schema comes into
+    use for the first time. Subsequent CRDT operations can refer to the ItemID of this schema update
+    operation in order to make clear the schema version in which an edit is made. Schema evolution
+    allows peers using different versions of the schema to interoperate.
+  fields:
+    - name: logicalTS
+      type: long
+      doc: >-
+        Counter portion of the logical timestamp (Lamport timestamp) for this operation. By
+        combining it with the peerIndex of the sender of the operation, recipients can construct the
+        ItemID for the schema.
+    - name: appVersion
+      type: string
+      default: ""
+      doc: Application version number that uses this schema (for informational purposes).
+    - name: schemaJSON
+      type: string
+      doc: Avro schema in JSON format.
+
+- name: RegisterWrite
+  type: record
+  doc: Operation recording the fact that the value of a register was overwritten.
+  fields:
+    - name: header
+      type: OperationHeader
+      doc: Identifies this operation and the register object to which it pertains.
+    - name: registerValue
+      type: bytes
+      doc: The new value of the register, encoded according to the register schema definition.
+
+- name: MapPut
+  type: record
+  doc: >-
+    Operation recording the fact that a key-value pair was put into a map object. The map maintains
+    a unique value per key, so if there are multiple concurrent puts for the same key, the values
+    are merged together according to the value CRDT merge function.
+  fields:
+    - name: header
+      type: OperationHeader
+      doc: Identifies this operation and the map object to which it pertains.
+    - name: mapKey
+      type: bytes
+      doc: The key we're putting into the map, encoded according to the map schema definition.
+    - name: mapValue
+      type: bytes
+      doc: The value we're putting into the map, encoded according to the map schema definition.
+
 - name: OrderedListInsert
   type: record
   doc: Operation recording the fact that an item was inserted into an ordered list.
   fields:
+    - name: header
+      type: OperationHeader
+      doc: Identifies this operation and the list object to which it pertains.
     - name: referenceID
       type: ["null", ItemID]
       doc: >-
         Identifies the location at which the new item should be inserted. If null, the item is
         inserted at the beginning of the list. Otherwise, this field is the ID of the item
         immediately to the left of the inserted item (i.e. its immediate predecessor).
-    - name: newID
-      type: ItemID
-      doc: The ID of the newly inserted item.
     - name: value
-      type: string
-      doc: The application-specified value inserted into the list.
+      type: bytes
+      doc: The value inserted into the list, encoded according to the list schema definition.
 
 - name: OrderedListDelete
   type: record
   doc: Operation recording the fact that an item was deleted from an ordered list.
   fields:
+    - name: header
+      type: OperationHeader
+      doc: Identifies this operation and the list object to which it pertains.
     - name: deleteID
       type: ItemID
       doc: The ID of the item being deleted from the list.
-    - name: deleteTS
-      type: ItemID
-      doc: The timestamp of the deletion operation (which will be used for the tombstone).
 
 - name: Message
   type: record
@@ -98,7 +176,7 @@
       doc: Sequence of operations that have taken place at the origin peer.
       type:
         type: array
-        items: [ClockUpdate, OrderedListInsert, OrderedListDelete]
+        items: [ClockUpdate, SchemaUpdate, RegisterWrite, MapPut, OrderedListInsert, OrderedListDelete]
 
 - name: OrderedList
   type: record
@@ -132,6 +210,40 @@
                 to null. When it is deleted, the field is set to the timestamp of the deletion
                 operation.
 
+- name: TextDocument
+  type: record
+  fields:
+    - name: cursors
+      type:
+        type: array
+        items:
+          name: CursorByPeer
+          type: record
+          fields:
+            - name: id
+              type: ItemID
+              doc: >-
+                Immutable identifier for this map item, assigned when the item is put into the map.
+            - name: key
+              type: PeerID
+              doc: >-
+                The ID of the peer whose cursor position is described here. It is assumed that the
+                array contains only one entry for a given peer, so the peer is effectively the key
+                of a map data structure. (We use an array instead of an Avro map because Avro maps
+                only support string keys.)
+            - name: value
+              type: ["null", ItemID]
+              doc: >-
+                The unique ID of the character at the current cursor position, or null if the cursor
+                is currently at the end of the document. This is the character that would be deleted
+                if you press the delete key. Pressing backspace would delete the character before
+                the current cursor position, and typing a letter would insert the letter before the
+                current cursor position. Since this field is only set by the peer described in the
+                key field, it is single-writer, and thus does not require a logical timestamp for
+                LWW conflict resolution.
+    - name: characters
+      type: OrderedList
+
 - name: PeerState
   type: record
   doc: >-
@@ -160,6 +272,12 @@
         The latest logical timestamp (Lamport clock) at this peer. This value is incremented every
         time a new operation is issued at this peer, and if a greater timestamp from another peer
         is seen, this value is increased to that maximum.
+    - name: defaultSchemaID
+      type: ItemID
+      doc: >-
+        The operation ID of the SchemaUpdate message that recorded the application schema on the
+        channel. This ItemID is embedded in the header of operations so that other peers know what
+        schema the operations refer to.
     - name: peers
       doc: >-
         List of all the peers that this peer is aware of. The first entry in this array is this peer
@@ -230,7 +348,7 @@
                 The message contents, currently a Message record in Avro binary encoding (may be
                 encrypted in future).
     - name: data
-      type: OrderedList
+      type: TextDocument
       doc: The actual data structure being maintained at this peer.
 
 
@@ -276,12 +394,20 @@
   fields:
     - name: channelID
       type: ChannelID
+      doc: The globally unique identifier of the channel on which the message was received.
     - name: senderID
       type: PeerID
+      doc: The globally unique identifier of the peer that sent this message.
     - name: senderSeqNo
       type: long
+      doc: >-
+        The sequence number that the sender has assigned to the message. It must be strictly
+        incrementing per sender and per channel, starting at 1 for the first message.
     - name: offset
       type: long
+      doc: >-
+        The offset that the server has assigned to the message. It is monotonically
+        increasing within a channel, but may have gaps in the sequence.
     - name: payload
       type: bytes
 

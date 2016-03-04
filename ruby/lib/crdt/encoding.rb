@@ -22,6 +22,7 @@ module CRDT
     PEER_STATE_SCHEMA = schemas['PeerState']
     CLIENT_TO_SERVER_SCHEMA = schemas['org.trvedata.trvedb.avro.ClientToServer']
     SERVER_TO_CLIENT_SCHEMA = schemas['org.trvedata.trvedb.avro.ServerToClient']
+    TEXT_DOCUMENT_SCHEMA = schemas['TextDocument']
 
     # Loads a peer's state from a the specified IO object +file+.
     def self.load(file, options={})
@@ -45,25 +46,33 @@ module CRDT
     # Returns the state of this peer as a structure of nested hashes and lists, according to the
     # +PeerState+ schema.
     def to_avro_hash
+      raise 'Cannot save peer without default_schema_id' if default_schema_id.nil?
       {
         'channelID'     => hex_to_bin(channel_id),
         'channelOffset' => channel_offset,
         'logicalTS'     => logical_ts,
+        'defaultSchemaID' => encode_item_id(default_schema_id),
         'peers'         => encode_peer_matrix,
         'messageLog'    => encode_message_log,
-        'data'          => encode_ordered_list
+        'data'          => {
+          'cursors'     => encode_cursors,
+          'characters'  => encode_ordered_list
+        }
       }
     end
 
     # Loads the state of this peer from a structure of nested hashes and lists, according to the
     # +PeerState+ schema.
     def from_avro_hash(state)
+      decode_peer_matrix(state['peers'])
+      decode_message_log(state['messageLog'])
+      decode_cursors(state['data']['cursors'])
+      decode_ordered_list(state['data']['characters'])
       self.channel_id     = bin_to_hex(state['channelID'])
       self.channel_offset = state['channelOffset']
       self.logical_ts     = state['logicalTS']
-      decode_peer_matrix(state['peers'])
-      decode_message_log(state['messageLog'])
-      decode_ordered_list(state['data'])
+      self.default_schema_id = decode_item_id(peer_id, state['defaultSchemaID'])
+      reload!
     end
 
     # Parses an array of PeerEntry records, as decoded from Avro, and applies them to a PeerMatrix
@@ -147,6 +156,7 @@ module CRDT
     # records, for encoding to Avro.
     def encode_message_log
       message_log.map do |message|
+        message.encoded ||= encode_message_payload(message)
         {
           'senderPeerIndex' => peer_matrix.peer_id_to_index(message.origin_peer_id),
           'senderSeqNo'     => message.msg_count,
@@ -194,14 +204,40 @@ module CRDT
       {'items' => items}
     end
 
+    # Parses an array of Avro CursorByPeer records, and applies them to the current peer.
+    # It has the following structure:
+    #
+    #     [{
+    #       # PeerID (32-byte binary string)
+    #       'key'   => '...',
+    #
+    #       # ItemID of character at current cursor position
+    #       'value' => {'logicalTS' => 123, 'peerIndex' => 3}
+    #      }, ...]
+    def decode_cursors(cursor_list)
+      cursor_list.each do |cursor|
+        cursors[bin_to_hex(cursor['key'])] = decode_item_id(peer_id, cursor['value'])
+      end
+    end
+
+    # Takes the current peer's cursors information and transforms it into a list of Avro
+    # CursorByPeer records.
+    def encode_cursors
+      cursors.map do |key, value|
+        {'key' => hex_to_bin(key), 'value' => encode_item_id(value)}
+      end
+    end
+
     # Transforms a CRDT::Peer::Message object into an Avro-encoded byte string that should be
     # broadcast to all peers.
     def encode_message_payload(message)
       operations = message.operations.map do |operation|
         case operation
         when PeerMatrix::ClockUpdate then encode_clock_update(operation)
+        when CRDT::SchemaUpdate      then encode_schema_update(operation)
         when OrderedList::InsertOp   then encode_list_insert(operation)
         when OrderedList::DeleteOp   then encode_list_delete(operation)
+        else raise "Unexpected operation type: #{operation.inspect}"
         end
       end
 
@@ -219,11 +255,17 @@ module CRDT
       message = reader.read(decoder)
 
       message['operations'].map do |operation|
-        if operation['updates'] # ClockUpdate message
+        if operation.include? 'updates' # ClockUpdate operation
           decode_clock_update(sender_id, operation)
-        elsif operation['newID'] # OrderedListInsert message
+        elsif operation.include? 'schemaJSON' # SchemaUpdate operation
+          decode_schema_update(sender_id, operation)
+        elsif operation.include? 'registerValue' # RegisterWrite operation
+          # TODO
+        elsif operation.include? 'mapKey' # MapPut operation
+          # TODO
+        elsif operation.include? 'referenceID' # OrderedListInsert operation
           decode_list_insert(sender_id, operation)
-        elsif operation['deleteID'] # OrderedListDelete message
+        elsif operation.include? 'deleteID' # OrderedListDelete operation
           decode_list_delete(sender_id, operation)
         else
           raise "Unexpected operation type: #{operation.inspect}"
@@ -288,15 +330,14 @@ module CRDT
         end
 
       elsif message['lastKnownSeqNo'] # SendMessageError
-        # TODO handle this gracefully
-        raise "Server rejected message: lastKnownSeqNo = #{message['lastKnownSeqNo']}"
+        replay_messages(message['lastKnownSeqNo'])
       else
         raise "Unexpected message type from server: #{message.inspect}"
       end
     end
 
-    # Takes all accumulated changes since the last call to #encode_message, and constructs
-    # a SendMessage command to send to a WebSocket server. It has the following structure:
+    # Takes a Peer::Message object and constructs a SendMessage to send that message to a WebSocket
+    # server. The SendMessage command has the following structure:
     #
     #     {
     #       # Identifies the channel on the server to which the message should be broadcast
@@ -308,11 +349,8 @@ module CRDT
     #       # Avro-encoded message payload as a byte string (not interpreted by the server)
     #       'payload' => '...'
     #     }
-    def encode_message
-      message = make_message
-      message.encoded = encode_message_payload(message)
-      message_log << message
-
+    def encode_message_request(message)
+      message.encoded ||= encode_message_payload(message)
       message_hash = {
         'channelID'   => hex_to_bin(channel_id),
         'senderSeqNo' => message.msg_count,
@@ -323,6 +361,12 @@ module CRDT
       writer = Avro::IO::DatumWriter.new(CLIENT_TO_SERVER_SCHEMA)
       writer.write({'message' => message_hash}, encoder)
       encoder.writer.string
+    end
+
+    # Returns a list of encoded SendMessage commands to send to a WebSocket server for all pending
+    # messages. Resets the buffer of pending messages, so the same messages won't be returned again.
+    def message_send_requests
+      messages_to_send.map {|msg| encode_message_request(msg) }
     end
 
     # Constructs a SubscribeToChannel command to send to a WebSocket server. It has the following
@@ -384,29 +428,59 @@ module CRDT
       {'updates' => entries}
     end
 
+    # Decodes a SchemaUpdate message from a remote peer. It has the following structure:
+    #
+    #     {
+    #       # Counter portion of the Lamport timestamp for this operation
+    #       'logicalTS' => 123,
+    #
+    #       # Application version that generated this schema (for information/log messages only)
+    #       'appVersion' => '1.0-beta3',
+    #
+    #       # JSON string with the Avro schema that will be assumed for CRDT operations
+    #       'schemaJSON' => '{"type":"record","name":"...",...}'
+    #     }
+    def decode_schema_update(origin_peer_id, operation)
+      operation_id = ItemID.new(operation['logicalTS'], origin_peer_id)
+      CRDT::SchemaUpdate.new(operation_id, operation['appVersion'], operation['schemaJSON'])
+    end
+
+    # Encodes a CRDT::SchemaUpdate operation for sending over the network.
+    def encode_schema_update(operation)
+      if operation.operation_id.peer_id != peer_id
+        raise 'Cannot encode SchemaUpdate that originated on another peer'
+      end
+
+      {
+        'logicalTS'  => operation.operation_id.logical_ts,
+        'appVersion' => operation.app_version.to_s,
+        'schemaJSON' => operation.schema_json.to_s
+      }
+    end
+
     # Parses an OrderedListInsert message. It has the following structure:
     #
     #     {
+    #       # Standard operation header (see decode_operation_header)
+    #       'header' => {...},
+    #
     #       # Identifies the list element to the left of the element being inserted (nil if head of list)
     #       'referenceID' => {'logicalTS' => 123, 'peerIndex' => 3},
-    #
-    #       # New identifier of the element being inserted
-    #       'newID' => {'logicalTS' => 321, 'peerIndex' => 0},
     #
     #       # Value of the element being inserted
     #       'value' => 'a'
     #     }
     def decode_list_insert(origin_peer_id, operation)
-      OrderedList::InsertOp.new(decode_item_id(origin_peer_id, operation['referenceID']),
-                                decode_item_id(origin_peer_id, operation['newID']),
+      OrderedList::InsertOp.new(decode_operation_header(origin_peer_id, operation),
+                                decode_item_id(origin_peer_id, operation['referenceID']),
                                 operation['value'])
     end
 
     # Encodes a CRDT::OrderedList::InsertOp operation for sending over the network.
     def encode_list_insert(operation)
       {
+        'header'      => encode_operation_header(operation.header),
         'referenceID' => encode_item_id(operation.reference_id),
-        'newID'       => encode_item_id(operation.new_id),
         'value'       => operation.value
       }
     end
@@ -414,22 +488,58 @@ module CRDT
     # Parses an OrderedListDelete message. It has the following structure:
     #
     #     {
-    #       # Identifies the list element being deleted
-    #       'deleteID' => {'logicalTS' => 123, 'peerIndex' => 3},
+    #       # Standard operation header (see decode_operation_header)
+    #       'header' => {...},
     #
-    #       # Tombstone timestamp for the deletion
-    #       'deleteTS' => {'logicalTS' => 321, 'peerIndex' => 0}
+    #       # Identifies the list element being deleted
+    #       'deleteID' => {'logicalTS' => 123, 'peerIndex' => 3}
     #     }
     def decode_list_delete(origin_peer_id, operation)
-      OrderedList::DeleteOp.new(decode_item_id(origin_peer_id, operation['deleteID']),
-                                decode_item_id(origin_peer_id, operation['deleteTS']))
+      OrderedList::DeleteOp.new(decode_operation_header(origin_peer_id, operation),
+                                decode_item_id(origin_peer_id, operation['deleteID']))
     end
 
     # Encodes a CRDT::OrderedList::DeleteOp operation for sending over the network.
     def encode_list_delete(operation)
       {
-        'deleteID' => encode_item_id(operation.delete_id),
-        'deleteTS' => encode_item_id(operation.delete_ts)
+        'header'   => encode_operation_header(operation.header),
+        'deleteID' => encode_item_id(operation.delete_id)
+      }
+    end
+
+    # Parses an OperationHeader object, which is included with every CRDT operation. It has the
+    # following structure:
+    #
+    #     {
+    #       'header' => {
+    #         # Counter portion of the Lamport timestamp for this operation
+    #         'logicalTS' => 123,
+    #
+    #         # Operation ID of a prior SchemaUpdate operation whose schema we're using
+    #         'schemaID' => {'logicalTS' => 1, 'peerIndex' => 3},
+    #
+    #         # Identifies the object to which the operation applies. See schema docs for details.
+    #         'accessPath' => [-1, 1]
+    #       },
+    #       ...other operation fields
+    #     }
+    def decode_operation_header(origin_peer_id, operation)
+      header = operation['header']
+      operation_id = ItemID.new(header['logicalTS'], origin_peer_id)
+      schema_id = decode_item_id(origin_peer_id, header['schemaID'])
+
+      CRDT::OperationHeader.new(operation_id, schema_id, header['accessPath'])
+    end
+
+    # Encodes a CRDT::OperationHeader object into a hash for Avro encoding.
+    def encode_operation_header(header)
+      raise 'Operation must originate on this peer' if header.operation_id.peer_id != peer_id
+      raise 'Operation must have a schema' if header.schema_id.nil?
+
+      {
+        'logicalTS'  => header.operation_id.logical_ts,
+        'schemaID'   => encode_item_id(header.schema_id),
+        'accessPath' => header.access_path
       }
     end
 
