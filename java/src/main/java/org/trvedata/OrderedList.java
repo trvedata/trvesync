@@ -50,7 +50,7 @@ public class OrderedList<T> implements Iterable<T> {
 	}
 
 	/**
-	 * Inserts a new item before the existing item identified by cursorId (local operation). If cursorId is nil, appends
+	 * Inserts a new item before the existing item identified by cursorId (local operation). If cursorId is <code>null</code>, appends
 	 * to the end of the list.
 	 */
 	public ItemID insertBeforeId(ItemID cursorId, T value) {
@@ -85,7 +85,7 @@ public class OrderedList<T> implements Iterable<T> {
 
 	/**
 	 * Deletes numItems items from the list (local operation). The items to be deleted are to the left of the item
-	 * identified by cursorId (not including the item identified by cursorId itself). If cursorId is nil, deletes
+	 * identified by cursorId (not including the item identified by cursorId itself). If cursorId is <code>null</code>, deletes
 	 * numItems from the end of the list. Returns the ID of the last non-deleted item before the sequence of deleted
 	 * items.
 	 */
@@ -157,7 +157,7 @@ public class OrderedList<T> implements Iterable<T> {
 	}
 
 	/**
-	 * Inserts a new list item to the right of the item identified by leftId. If leftId is nil, inserts a new list item
+	 * Inserts a new list item to the right of the item identified by leftId. If leftId is <code>null</code>, inserts a new list item
 	 * at the head. The new item has ID insertId and the given value. Returns the newly inserted item.
 	 */
 	public Item<T> insertAfterId(ItemID leftId, ItemID insertId, T value) {
