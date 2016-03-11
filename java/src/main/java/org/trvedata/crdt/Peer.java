@@ -24,18 +24,21 @@ public class Peer {
 	private long logicalTs = 0;
 
 	public Peer() {
-		this(null, null);
+		this((PeerID)null, null);
 	}
 	
-	public Peer(String peerId, CRDT crdt) {
-		this.peerId = peerId != null ? new PeerID(peerId) : this.createRandomPeerID();
+	public Peer(PeerID peerId, CRDT crdt) {
+		this.peerId = peerId == null ? createRandomPeerID() : peerId;
 		this.peerMatrix = new PeerMatrix(this.peerId);
 		this.crdt = crdt != null ? crdt : new OrderedList();
 		this.crdt.setPeer(this);
-		this.logicalTs = 0;
+	}
+	
+	public Peer(String peerId, CRDT crdt) {
+		this(peerId == null ? null : new PeerID(peerId), crdt);
 	}
 
-	protected PeerID createRandomPeerID() {
+	protected static PeerID createRandomPeerID() {
 		SecureRandom rand = new SecureRandom();
 		byte[] bytes = new byte[32];
 		String ret = "";
