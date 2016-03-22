@@ -30,7 +30,6 @@ module CRDT
     # Creates an empty ordered list, running at the local +peer+.
     def initialize(peer)
       @peer = peer or raise ArgumentError, 'peer must be set'
-      @lamport_clock = 0
       @items_by_id = {}
       @head = nil
       @tail = nil
@@ -64,7 +63,7 @@ module CRDT
       item = insert_after_id(left_id, @peer.next_id, value)
 
       # TODO fix hard-coded access path
-      header = CRDT::OperationHeader.new(item.insert_id, peer.default_schema_id, [-1, 1])
+      header = CRDT::OperationHeader.new(item.insert_id, peer.default_schema_id, nil, [1])
       op = InsertOp.new(header, item.previous && item.previous.insert_id, item.value)
       @peer.send_operation(op)
       self
@@ -83,7 +82,7 @@ module CRDT
       item = insert_after_id(left_id, @peer.next_id, value)
 
       # TODO fix hard-coded access path
-      header = CRDT::OperationHeader.new(item.insert_id, peer.default_schema_id, [-1, 1])
+      header = CRDT::OperationHeader.new(item.insert_id, peer.default_schema_id, nil, [1])
       op = InsertOp.new(header, item.previous && item.previous.insert_id, item.value)
       @peer.send_operation(op)
       item.insert_id
@@ -96,7 +95,7 @@ module CRDT
       item.value = nil
 
       # TODO fix hard-coded access path
-      header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, [-1, 1])
+      header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, nil, [1])
       @peer.send_operation(DeleteOp.new(header, item.insert_id))
       self
     end
@@ -119,7 +118,7 @@ module CRDT
           item.value = nil
 
           # TODO fix hard-coded access path
-          header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, [-1, 1])
+          header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, nil, [1])
           @peer.send_operation(DeleteOp.new(header, item.insert_id))
           num_items -= 1
         end
@@ -142,7 +141,7 @@ module CRDT
           item.value = nil
 
           # TODO fix hard-coded access path
-          header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, [-1, 1])
+          header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, nil, [1])
           @peer.send_operation(DeleteOp.new(header, item.insert_id))
           num_items -= 1
         end

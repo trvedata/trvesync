@@ -23,6 +23,7 @@ module CRDT
     CLIENT_TO_SERVER_SCHEMA = schemas['org.trvedata.trvedb.avro.ClientToServer']
     SERVER_TO_CLIENT_SCHEMA = schemas['org.trvedata.trvedb.avro.ServerToClient']
     TEXT_DOCUMENT_SCHEMA = schemas['TextDocument']
+    ITEM_ID_SCHEMA = Avro::Schema.real_parse(['null', 'ItemID'], schemas)
 
     # Loads a peer's state from a the specified IO object +file+.
     def self.load(file, options={})
@@ -208,23 +209,40 @@ module CRDT
     # It has the following structure:
     #
     #     [{
+    #       # ItemID of the operation that created this map entry
+    #       'id' => {'logicalTS' => 2, 'peerIndex' => 0},
+    #
+    #       # ItemID of the operation that last updated this map entry
+    #       'updateTS' => {'logicalTS' => 234, 'peerIndex' => 0},
+    #
     #       # PeerID (32-byte binary string)
     #       'key'   => '...',
     #
-    #       # ItemID of character at current cursor position
+    #       # ItemID of character at current cursor position (may be null)
     #       'value' => {'logicalTS' => 123, 'peerIndex' => 3}
     #      }, ...]
     def decode_cursors(cursor_list)
-      cursor_list.each do |cursor|
-        cursors[bin_to_hex(cursor['key'])] = decode_item_id(peer_id, cursor['value'])
+      items = cursor_list.map do |cursor|
+        Map::Item.new(
+          decode_item_id(peer_id, cursor['id']),
+          decode_item_id(peer_id, cursor['updateTS']),
+          bin_to_hex(cursor['key']),
+          decode_item_id(peer_id, cursor['value'])
+        )
       end
+      cursors.load_items(items)
     end
 
     # Takes the current peer's cursors information and transforms it into a list of Avro
     # CursorByPeer records.
     def encode_cursors
-      cursors.map do |key, value|
-        {'key' => hex_to_bin(key), 'value' => encode_item_id(value)}
+      cursors.items.map do |item|
+        {
+          'id'       => encode_item_id(item.put_id),
+          'updateTS' => encode_item_id(item.update_ts),
+          'key'      => hex_to_bin(item.key),
+          'value'    => encode_item_id(item.value)
+        }
       end
     end
 
@@ -235,6 +253,8 @@ module CRDT
         case operation
         when PeerMatrix::ClockUpdate then encode_clock_update(operation)
         when CRDT::SchemaUpdate      then encode_schema_update(operation)
+        when Map::WriteOp            then encode_register_write(operation)
+        when Map::PutOp              then encode_map_put(operation)
         when OrderedList::InsertOp   then encode_list_insert(operation)
         when OrderedList::DeleteOp   then encode_list_delete(operation)
         else raise "Unexpected operation type: #{operation.inspect}"
@@ -260,9 +280,9 @@ module CRDT
         elsif operation.include? 'schemaJSON' # SchemaUpdate operation
           decode_schema_update(sender_id, operation)
         elsif operation.include? 'registerValue' # RegisterWrite operation
-          # TODO
+          decode_register_write(sender_id, operation)
         elsif operation.include? 'mapKey' # MapPut operation
-          # TODO
+          decode_map_put(sender_id, operation)
         elsif operation.include? 'referenceID' # OrderedListInsert operation
           decode_list_insert(sender_id, operation)
         elsif operation.include? 'deleteID' # OrderedListDelete operation
@@ -458,6 +478,55 @@ module CRDT
       }
     end
 
+    # Parses a RegisterWrite message. It has the following structure:
+    #
+    #     {
+    #       # Standard operation header (see decode_operation_header)
+    #       'header' => {...},
+    #
+    #       # New value of the register, Avro-encoded binary according to the schema definition
+    #       'registerValue' => '...',
+    #     }
+    def decode_register_write(origin_peer_id, operation)
+      Map::WriteOp.new(decode_operation_header(origin_peer_id, operation),
+                       decode_map_value(origin_peer_id, operation['registerValue']))
+    end
+
+    # Encodes a CRDT::Map::WriteOp operation for sending over the network.
+    def encode_register_write(operation)
+      {
+        'header'        => encode_operation_header(operation.header),
+        'registerValue' => encode_map_value(operation.value)
+      }
+    end
+
+    # Parses a MapPut message. It has the following structure:
+    #
+    #     {
+    #       # Standard operation header (see decode_operation_header)
+    #       'header' => {...},
+    #
+    #       # Key being inserted, Avro-encoded binary according to the schema definition
+    #       'mapKey' => '...',
+    #
+    #       # Value being inserted, Avro-encoded binary according to the schema definition
+    #       'mapValue' => '...'
+    #     }
+    def decode_map_put(origin_peer_id, operation)
+      Map::PutOp.new(decode_operation_header(origin_peer_id, operation),
+                     decode_map_key(origin_peer_id, operation['mapKey']),
+                     decode_map_value(origin_peer_id, operation['mapValue']))
+    end
+
+    # Encodes a CRDT::Map::PutOp operation for sending over the network.
+    def encode_map_put(operation)
+      {
+        'header'   => encode_operation_header(operation.header),
+        'mapKey'   => encode_map_key(operation.key),
+        'mapValue' => encode_map_value(operation.value)
+      }
+    end
+
     # Parses an OrderedListInsert message. It has the following structure:
     #
     #     {
@@ -527,8 +596,18 @@ module CRDT
       header = operation['header']
       operation_id = ItemID.new(header['logicalTS'], origin_peer_id)
       schema_id = decode_item_id(origin_peer_id, header['schemaID'])
+      access_path = header['accessPath'].dup
 
-      CRDT::OperationHeader.new(operation_id, schema_id, header['accessPath'])
+      if access_path[0] == -1
+        access_path.shift
+        access_root = nil
+      else
+        logical_ts = access_path.shift
+        access_peer_id = peer_matrix.remote_index_to_peer_id(origin_peer_id, access_path.shift)
+        access_root = ItemID.new(logical_ts, access_peer_id)
+      end
+
+      CRDT::OperationHeader.new(operation_id, schema_id, access_root, access_path)
     end
 
     # Encodes a CRDT::OperationHeader object into a hash for Avro encoding.
@@ -536,11 +615,46 @@ module CRDT
       raise 'Operation must originate on this peer' if header.operation_id.peer_id != peer_id
       raise 'Operation must have a schema' if header.schema_id.nil?
 
+      if header.access_root.nil?
+        full_access_path = [-1] + header.access_path
+      else
+        full_access_path = [
+          header.access_root.logical_ts,
+          peer_matrix.peer_id_to_index(header.access_root.peer_id)
+        ] + header.access_path
+      end
+
       {
         'logicalTS'  => header.operation_id.logical_ts,
         'schemaID'   => encode_item_id(header.schema_id),
-        'accessPath' => header.access_path
+        'accessPath' => full_access_path
       }
+    end
+
+    # Currently hard-coded to a key of type PeerID, TODO generalise this
+    def decode_map_key(origin_peer_id, key_binary)
+      bin_to_hex(key_binary)
+    end
+
+    # Currently hard-coded to a key of type PeerID, TODO generalise this
+    def encode_map_key(key)
+      hex_to_bin(key)
+    end
+
+    # Currently hard-coded to a value of type ItemID, TODO generalise this
+    def decode_map_value(origin_peer_id, value_binary)
+      decoder = Avro::IO::BinaryDecoder.new(StringIO.new(value_binary))
+      reader = Avro::IO::DatumReader.new(ITEM_ID_SCHEMA)
+      value_hash = reader.read(decoder)
+      decode_item_id(origin_peer_id, value_hash)
+    end
+
+    # Currently hard-coded to a value of type ItemID, TODO generalise this
+    def encode_map_value(value)
+      value_hash = encode_item_id(value)
+      encoder = Avro::IO::BinaryEncoder.new(StringIO.new(''.force_encoding('BINARY')))
+      Avro::IO::DatumWriter.new(ITEM_ID_SCHEMA).write(value_hash, encoder)
+      encoder.writer.string
     end
 
     # Translates an on-the-wire encoding of an ItemID (using a peer index) into an in-memory ItemID

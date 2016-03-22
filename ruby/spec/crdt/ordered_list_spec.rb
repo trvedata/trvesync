@@ -103,7 +103,7 @@ RSpec.describe CRDT::OrderedList do
       peer.ordered_list.insert(0, :a)
       expect(peer.make_message.operations).to eq [
         CRDT::OrderedList::InsertOp.new(
-          CRDT::OperationHeader.new(CRDT::ItemID.new(2, :peer1), peer.default_schema_id, [-1, 1]),
+          CRDT::OperationHeader.new(CRDT::ItemID.new(2, :peer1), peer.default_schema_id, nil, [1]),
           nil, :a)
       ]
     end
@@ -134,7 +134,7 @@ RSpec.describe CRDT::OrderedList do
       peer.ordered_list.insert(0, :a).delete(0)
       expect(peer.make_message.operations.last).to eq (
         CRDT::OrderedList::DeleteOp.new(
-          CRDT::OperationHeader.new(CRDT::ItemID.new(3, :peer1), peer.default_schema_id, [-1, 1]),
+          CRDT::OperationHeader.new(CRDT::ItemID.new(3, :peer1), peer.default_schema_id, nil, [1]),
           CRDT::ItemID.new(2, :peer1))
       )
     end

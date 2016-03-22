@@ -85,6 +85,23 @@ RSpec.describe CRDT::Encoding do
       expect(server.peers[0].ordered_list.to_a).to eq ['a', 'c']
     end
 
+    it 'should preserve cursor positions' do
+      server = MockServer.new(2)
+      first_letter  = server.peers[0].ordered_list.insert_before_id(nil, 'a')
+      second_letter = server.peers[0].ordered_list.insert_before_id(nil, 'b')
+      server.peers[0].cursors[server.peers[0].peer_id] = nil
+      server.broadcast(0)
+
+      server.peers[1].cursors[server.peers[1].peer_id] = second_letter
+      server.broadcast(1)
+
+      server.peers[0].save(@file)
+      @file.rewind
+      server.peers[0] = CRDT::Peer.load(@file)
+      expect(server.peers[0].cursors[server.peers[0].peer_id]).to eq nil
+      expect(server.peers[1].cursors[server.peers[1].peer_id]).to eq second_letter
+    end
+
     it 'should save and reload the peer matrix' do
       server = MockServer.new(2)
       server.peers[0].ordered_list.insert(0, 'a')
@@ -173,11 +190,20 @@ RSpec.describe CRDT::Encoding do
   end
 
   context 'sending and receiving messages' do
-    it 'should encode CRDT operations' do
+    it 'should encode ordered list operations' do
       server = MockServer.new(2)
       server.peers[0].ordered_list.insert(0, 'a').insert(1, 'b').delete(0)
       server.broadcast(0)
       expect(server.peers[1].ordered_list.to_a).to eq ['b']
+    end
+
+    it 'should encode map operations' do
+      server = MockServer.new(2)
+      first_letter = server.peers[0].ordered_list.insert_before_id(nil, 'a')
+      server.peers[0].cursors[server.peers[0].peer_id] = nil
+      server.peers[0].cursors[server.peers[0].peer_id] = first_letter
+      server.broadcast(0)
+      expect(server.peers[1].cursors[server.peers[0].peer_id]).to eq first_letter
     end
 
     it 'should track causal dependencies' do

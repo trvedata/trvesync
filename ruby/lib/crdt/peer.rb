@@ -18,7 +18,17 @@ module CRDT
     end
   end
 
-  class OperationHeader < Struct.new(:operation_id, :schema_id, :access_path)
+  # Metadata that is included with every CRDT modification operation.
+  #
+  # operation_id: ItemID of this operation (must be unique and monotonically increasing).
+  # schema_id:    ItemID of a prior SchemaUpdate operation, in which the schema was registered
+  #               on the basis of which this operation is being made.
+  # access_root:  ItemID of the root object relative to which the access_path is interpreted.
+  #               nil if the access_path is based at the root of the document.
+  # access_path:  Array of integers, indicating the field numbers of the (possibly nested) records
+  #               that must be traversed, starting from access_root, to reach the part of the
+  #               document being modified in this operation.
+  class OperationHeader < Struct.new(:operation_id, :schema_id, :access_root, :access_path)
   end
 
   class SchemaUpdate < Struct.new(:operation_id, :app_version, :schema_json)
@@ -40,7 +50,7 @@ module CRDT
     # Keeps track of the key facts that we know about our peers.
     attr_reader :peer_matrix
 
-    # Map of peer ID => ItemID of the character at the current cursor position at that peer.
+    # CRDT map of peer ID => ItemID of the character at the current cursor position at that peer.
     attr_reader :cursors
 
     # CRDT data structure (TODO generalise this)
@@ -78,7 +88,7 @@ module CRDT
     def initialize(peer_id=nil, options={})
       @peer_id = peer_id || bin_to_hex(OpenSSL::Random.random_bytes(32))
       @peer_matrix = PeerMatrix.new(@peer_id)
-      @cursors = {}
+      @cursors = Map.new(self)
       @ordered_list = OrderedList.new(self)
       @logical_ts = 0
       @channel_offset = -1
@@ -166,6 +176,14 @@ module CRDT
       ret
     end
 
+    def cursor_id
+      @cursors[peer_id]
+    end
+
+    def cursor_id=(new_cursor_id)
+      @cursors[peer_id] = new_cursor_id
+    end
+
     private
 
     # Called when the state of the peer has been reloaded from disk.
@@ -224,9 +242,16 @@ module CRDT
         when MessageProcessed
           peer_matrix.processed_incoming_msg(ready_peer_id, operation.msg_count)
 
-        else
+        when OrderedList::InsertOp, OrderedList::DeleteOp
           @logical_ts = operation.logical_ts if @logical_ts < operation.logical_ts
           ordered_list.apply_operation(operation)
+
+        when Map::PutOp, Map::WriteOp
+          @logical_ts = operation.logical_ts if @logical_ts < operation.logical_ts
+          cursors.apply_operation(operation)
+
+        else
+          raise "Unknown operation type: #{operation.inspect}"
         end
       end
 

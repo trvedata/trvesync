@@ -11,7 +11,6 @@ module CRDT
       @options = options
       @network = CRDT::Network.new(peer, options[:websocket], options[:logger] || lambda {|msg| })
       @canvas_size = [0, 0]
-      @cursor_id = nil
     end
 
     # Draw app and redraw after each keystroke
@@ -59,7 +58,7 @@ module CRDT
       word_boundary = 0
 
       @peer.ordered_list.each_item do |item|
-        if @cursor_id == item.insert_id
+        if @peer.cursor_id == item.insert_id
           @cursor = [@item_ids.last.size, @item_ids.size - 1]
         end
 
@@ -89,8 +88,8 @@ module CRDT
               end
               word_boundary = 0
 
-              if @item_ids.last.include? @cursor_id
-                @cursor = [@item_ids.last.index(@cursor_id), @item_ids.size - 1]
+              if @item_ids.last.include? @peer.cursor_id
+                @cursor = [@item_ids.last.index(@peer.cursor_id), @item_ids.size - 1]
               end
             end
           end
@@ -98,7 +97,7 @@ module CRDT
       end
 
       @item_ids.last << nil # insertion point for appending at the end
-      @cursor = [@item_ids.last.size - 1, @item_ids.size - 1] if @cursor_id.nil?
+      @cursor = [@item_ids.last.size - 1, @item_ids.size - 1] if @peer.cursor_id.nil?
       @lines << '' while @lines.size < @canvas_size[1] - 1
       @lines << "Channel: #{@peer.channel_id}"[0...@canvas_size[0]]
       screen.draw(@lines.join("\n"), [], @cursor.reverse)
@@ -181,7 +180,7 @@ module CRDT
         @cursor_x = @canvas_size[0]
       end
 
-      @cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
     end
 
     def end_of_line
@@ -190,16 +189,16 @@ module CRDT
 
     # Insert a character at the current cursor position
     def insert(char)
-      @peer.ordered_list.insert_before_id(@cursor_id, char)
+      @peer.ordered_list.insert_before_id(@peer.cursor_id, char)
       :insert
     end
 
     # Delete characters before (negative) or after (positive) the current cursor position
     def delete(num_chars)
       if num_chars < 0
-        @peer.ordered_list.delete_before_id(@cursor_id, -num_chars)
-      elsif @cursor_id
-        @cursor_id = @peer.ordered_list.delete_after_id(@cursor_id, num_chars)
+        @peer.ordered_list.delete_before_id(@peer.cursor_id, -num_chars)
+      elsif @peer.cursor_id
+        @peer.cursor_id = @peer.ordered_list.delete_after_id(@peer.cursor_id, num_chars)
       end
       :delete
     end

@@ -224,6 +224,15 @@
               type: ItemID
               doc: >-
                 Immutable identifier for this map item, assigned when the item is put into the map.
+            - name: updateTS
+              type: ItemID
+              doc: >-
+                Logical timestamp of the operation that last updated the value for this map item.
+                This is used to resolve concurrent updates (in LWW register fashion). Note that in
+                the particular case of a map of cursor positions, this timestamp actually isn't
+                needed, since it is keyed by PeerID and each peer only writes its own entry, so the
+                registers are single-writer. However, we're including it anyway for the sake of
+                generality of the map code.
             - name: key
               type: PeerID
               doc: >-
