@@ -1,0 +1,46 @@
+#!/usr/bin/env ruby
+
+$stderr.sync = true
+filename = ARGV.shift
+
+if filename.nil?
+  $stderr.puts "Usage: crdt-oplog file.crdt"
+  exit(1)
+end
+
+$LOAD_PATH.unshift(File.expand_path('../lib', File.dirname(__FILE__)))
+
+require 'crdt'
+require 'json'
+
+# Takes an object consisting of nested hashes/lists/strings/etc, and transforms
+# any binary strings within to be safe for encoding as JSON (which only
+# supports UTF-8 strings). Uses the same charset mapping as the Avro JSON Encoder:
+# https://github.com/apache/avro/blob/master/lang/java/avro/src/main/java/org/apache/avro/io/JsonEncoder.java#L216-L220
+# It's an ugly hack, but at least it preserves information and it is moderately
+# human-readable.
+def encode_binary(obj)
+  case obj
+  when Hash
+    obj.each_with_object({}) do |(key, value), hash|
+      hash[encode_binary(key)] = encode_binary(value)
+    end
+  when Array
+    obj.map {|elem| encode_binary(elem) }
+  when String
+    obj.dup.force_encoding('ISO-8859-1').encode('UTF-8')
+  else
+    obj
+  end
+end
+
+peer = CRDT::Peer.load(filename)
+reader = Avro::IO::DatumReader.new(CRDT::Encoding::MESSAGE_SCHEMA)
+
+peer.message_log.each do |message|
+  decoded = reader.read(Avro::IO::BinaryDecoder.new(StringIO.new(message.encoded)))
+  decoded['sender'] = message.origin_peer_id
+  decoded['seq_no'] = message.msg_count
+  decoded['offset'] = message.offset
+  puts JSON.generate(encode_binary(decoded))
+end
