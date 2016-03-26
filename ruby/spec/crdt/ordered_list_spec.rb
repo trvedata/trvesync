@@ -1,15 +1,6 @@
 require 'crdt'
 
 RSpec.describe CRDT::OrderedList do
-
-  # make_peers(n) creates n peers on the same channel
-  def make_peers(num_peers)
-    peer0 = CRDT::Peer.new('peer0')
-    [peer0] + (1...num_peers).map do |i|
-      CRDT::Peer.new("peer#{i}", channel_id: peer0.channel_id)
-    end
-  end
-
   context '#to_a' do
     it 'should be empty by default' do
       peer = CRDT::Peer.new(:peer1)
@@ -102,9 +93,10 @@ RSpec.describe CRDT::OrderedList do
       peer.make_message
       peer.ordered_list.insert(0, :a)
       expect(peer.make_message.operations).to eq [
-        CRDT::OrderedList::InsertOp.new(
-          CRDT::OperationHeader.new(CRDT::ItemID.new(2, :peer1), peer.default_schema_id, nil, [1]),
-          nil, :a)
+        CRDT::Operation.new(
+          CRDT::ItemID.new(3, :peer1),
+          CRDT::ItemID.new(2, :peer1),
+          CRDT::OrderedList::InsertOp.new(nil, :a))
       ]
     end
 
@@ -113,8 +105,8 @@ RSpec.describe CRDT::OrderedList do
       peer.make_message
       peer.ordered_list.insert(0, :a).insert(1, :b).insert(2, :c)
       ops = peer.make_message.operations
-      expect(ops.map {|op| op.header.operation_id.logical_ts }).to eq [2, 3, 4]
-      expect(ops.map {|op| op.value }).to eq [:a, :b, :c]
+      expect(ops.map {|op| op.op_id.logical_ts }).to eq [3, 4, 5]
+      expect(ops.map {|op| op.op.value }).to eq [:a, :b, :c]
     end
 
     it 'should reference prior inserts in later operations' do
@@ -122,20 +114,20 @@ RSpec.describe CRDT::OrderedList do
       peer.make_message
       peer.ordered_list.insert(0, :a).insert(1, :b).insert(2, :c).delete(1)
       ops = peer.make_message.operations
-      expect(ops[0].reference_id).to eq nil
-      expect(ops[1].reference_id).to eq CRDT::ItemID.new(2, :peer1)
-      expect(ops[2].reference_id).to eq CRDT::ItemID.new(3, :peer1)
-      expect(ops[3].delete_id).to    eq CRDT::ItemID.new(3, :peer1)
+      expect(ops[0].op.reference_id).to eq nil
+      expect(ops[1].op.reference_id).to eq CRDT::ItemID.new(3, :peer1)
+      expect(ops[2].op.reference_id).to eq CRDT::ItemID.new(4, :peer1)
+      expect(ops[3].target         ).to eq CRDT::ItemID.new(4, :peer1)
     end
 
     it 'should include details of a delete operation' do
       peer = CRDT::Peer.new(:peer1)
-      peer.make_message
       peer.ordered_list.insert(0, :a).delete(0)
       expect(peer.make_message.operations.last).to eq (
-        CRDT::OrderedList::DeleteOp.new(
-          CRDT::OperationHeader.new(CRDT::ItemID.new(3, :peer1), peer.default_schema_id, nil, [1]),
-          CRDT::ItemID.new(2, :peer1))
+        CRDT::Operation.new(
+          CRDT::ItemID.new(4, :peer1),
+          CRDT::ItemID.new(3, :peer1),
+          CRDT::OrderedList::DeleteOp.new)
       )
     end
 
@@ -171,8 +163,8 @@ RSpec.describe CRDT::OrderedList do
     it 'should order concurrent inserts at the head deterministically' do
       peer1, peer2 = make_peers(2)
       peer2.process_message(peer1.make_message)
-      peer1.ordered_list.insert(0, :a).insert(1, :b)
-      peer2.ordered_list.insert(0, :c).insert(1, :d)
+      peer1.ordered_list.insert(0, :c).insert(1, :d)
+      peer2.ordered_list.insert(0, :a).insert(1, :b)
       peer2.process_message(peer1.make_message)
       peer1.process_message(peer2.make_message)
       expect(peer1.ordered_list.to_a).to eq [:a, :b, :c, :d]

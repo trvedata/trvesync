@@ -40,7 +40,7 @@ RSpec.describe CRDT::Encoding do
 
         to_client_bin = encode_to_client(to_client)
         peers.each {|peer| peer.receive_message(to_client_bin) }
-        @last_message = CRDT::Peer::Message.new(peers[sender].peer_id, from_client['senderSeqNo'], @offset, nil, from_client['payload'])
+        @last_message = CRDT::Peer::Message.new(peers[sender].peer_id, from_client['senderSeqNo'], @offset, Time.now, nil, from_client['payload'])
       end
     end
   end
@@ -120,14 +120,14 @@ RSpec.describe CRDT::Encoding do
     it 'should save and reload the Lamport clock' do
       peer = CRDT::Peer.new
       peer.ordered_list.insert(0, 'a').insert(1, 'b')
-      expect(peer.logical_ts).to eq 3
+      expect(peer.peer_matrix.next_ts_by_peer_id[peer.peer_id]).to eq 5
 
       peer.save(@file)
       @file.rewind
       peer = CRDT::Peer.load(@file)
-      expect(peer.logical_ts).to eq 3
+      expect(peer.peer_matrix.next_ts_by_peer_id[peer.peer_id]).to eq 5
       peer.ordered_list.insert(2, 'c')
-      expect(peer.logical_ts).to eq 4
+      expect(peer.peer_matrix.next_ts_by_peer_id[peer.peer_id]).to eq 6
     end
 
     context 'message buffers' do
@@ -146,10 +146,10 @@ RSpec.describe CRDT::Encoding do
           expect(reloaded_peer.message_send_requests.size).to eq 0
 
           logged_msg = reloaded_peer.message_log.first
-          expect(logged_msg.origin_peer_id).to eq server.peers[0].peer_id
-          expect(logged_msg.msg_count     ).to eq 1
-          expect(logged_msg.offset        ).to eq 1
-          expect(logged_msg.encoded       ).to eq server.last_message.encoded
+          expect(logged_msg.sender_id    ).to eq server.peers[0].peer_id
+          expect(logged_msg.sender_seq_no).to eq 1
+          expect(logged_msg.offset       ).to eq 1
+          expect(logged_msg.encoded      ).to eq server.last_message.encoded
         end
       end
 
@@ -165,10 +165,10 @@ RSpec.describe CRDT::Encoding do
         expect(send_queue.size).to eq 1
 
         logged_msg = send_queue.first
-        expect(logged_msg.origin_peer_id).to eq server.peers[0].peer_id
-        expect(logged_msg.msg_count     ).to eq 1
-        expect(logged_msg.offset        ).to be_nil
-        expect(logged_msg.encoded       ).to eq msg['payload']
+        expect(logged_msg.sender_id    ).to eq server.peers[0].peer_id
+        expect(logged_msg.sender_seq_no).to eq 1
+        expect(logged_msg.offset       ).to be_nil
+        expect(logged_msg.encoded      ).to eq msg['payload']
       end
 
       it 'should retransmit messages that the server forgot about' do
@@ -182,9 +182,9 @@ RSpec.describe CRDT::Encoding do
         server.peers[0].receive_message(server.encode_to_client(error))
         messages = server.peers[0].messages_to_send
         expect(messages.size).to eq 1
-        expect(messages.first.origin_peer_id).to eq server.peers[0].peer_id
-        expect(messages.first.msg_count     ).to eq 1
-        expect(messages.first.encoded       ).to eq server.last_message.encoded
+        expect(messages.first.sender_id    ).to eq server.peers[0].peer_id
+        expect(messages.first.sender_seq_no).to eq 1
+        expect(messages.first.encoded      ).to eq server.last_message.encoded
       end
     end
   end
@@ -238,10 +238,10 @@ RSpec.describe CRDT::Encoding do
         expect(server.peers[peer_num].message_log.size).to eq 1
 
         logged_msg = server.peers[peer_num].message_log.first
-        expect(logged_msg.origin_peer_id).to eq server.peers[0].peer_id
-        expect(logged_msg.msg_count     ).to eq 1
-        expect(logged_msg.offset        ).to eq 1
-        expect(logged_msg.encoded       ).to eq server.last_message.encoded
+        expect(logged_msg.sender_id    ).to eq server.peers[0].peer_id
+        expect(logged_msg.sender_seq_no).to eq 1
+        expect(logged_msg.offset       ).to eq 1
+        expect(logged_msg.encoded      ).to eq server.last_message.encoded
       end
     end
 
@@ -253,10 +253,10 @@ RSpec.describe CRDT::Encoding do
       expect(server.peers[0].message_log.size).to eq 1
 
       logged_msg = server.peers[0].message_log.first
-      expect(logged_msg.origin_peer_id).to eq server.peers[0].peer_id
-      expect(logged_msg.msg_count     ).to eq 1
-      expect(logged_msg.offset        ).to be_nil
-      expect(logged_msg.encoded.size  ).to be > 10
+      expect(logged_msg.sender_id    ).to eq server.peers[0].peer_id
+      expect(logged_msg.sender_seq_no).to eq 1
+      expect(logged_msg.offset       ).to be_nil
+      expect(logged_msg.encoded.size ).to be > 10
     end
   end
 end

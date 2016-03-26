@@ -35,12 +35,22 @@ def encode_binary(obj)
 end
 
 peer = CRDT::Peer.load(filename)
-reader = Avro::IO::DatumReader.new(CRDT::Encoding::MESSAGE_SCHEMA)
+message_reader = Avro::IO::DatumReader.new(CRDT::Encoding::MESSAGE_SCHEMA)
+operation_reader = Avro::IO::DatumReader.new(CRDT::Encoding::APP_OPERATION_SCHEMA)
 
 peer.message_log.each do |message|
-  decoded = reader.read(Avro::IO::BinaryDecoder.new(StringIO.new(message.encoded)))
-  decoded['sender'] = message.origin_peer_id
-  decoded['seq_no'] = message.msg_count
-  decoded['offset'] = message.offset
-  puts JSON.generate(encode_binary(decoded))
+  msg_hash = message_reader.read(Avro::IO::BinaryDecoder.new(StringIO.new(message.encoded)))
+  msg_hash['sender'] = message.sender_id
+  msg_hash['senderSeqNo'] = message.sender_seq_no
+  msg_hash['offset'] = message.offset
+  msg_hash['operations'].map! do |op_hash|
+    if op_hash['operation']
+      decoder = Avro::IO::BinaryDecoder.new(StringIO.new(op_hash['operation']))
+      app_op = encode_binary(operation_reader.read(decoder))
+      app_op.merge('target' => op_hash['target'])
+    else
+      op_hash
+    end
+  end
+  puts JSON.generate(msg_hash)
 end

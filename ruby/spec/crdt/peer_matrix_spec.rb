@@ -13,16 +13,19 @@ RSpec.describe CRDT::PeerMatrix do
   it 'should assign sequential message numbers' do
     peer = CRDT::Peer.new
     peer.ordered_list.insert(0, :a)
-    expect(peer.make_message.msg_count).to eq 1
+    expect(peer.make_message.sender_seq_no).to eq 1
     peer.ordered_list.insert(1, :b)
-    expect(peer.make_message.msg_count).to eq 2
+    expect(peer.make_message.sender_seq_no).to eq 2
     peer.ordered_list.insert(2, :c).delete(0)
-    expect(peer.make_message.msg_count).to eq 3
+    expect(peer.make_message.sender_seq_no).to eq 3
   end
 
   it 'should assign peer indexes in the order they are seen' do
     peers = make_peers(4)
+    init_msg = peers[0].make_message
+
     (1..3).each do |num|
+      peers[num].process_message(init_msg)
       peers[num].ordered_list.insert(0, num.to_s)
       peers[0].process_message(peers[num].make_message)
     end
@@ -35,6 +38,10 @@ RSpec.describe CRDT::PeerMatrix do
 
   it 'should generate clock update operations when messages are received' do
     local, remote1, remote2 = make_peers(3)
+    init_msg = local.make_message
+    remote1.process_message(init_msg)
+    remote2.process_message(init_msg)
+
     remote1.ordered_list.insert(0, :a).insert(1, :b)
     remote2.ordered_list.insert(0, :z)
     local.process_message(remote1.make_message)
@@ -42,8 +49,7 @@ RSpec.describe CRDT::PeerMatrix do
     remote1.ordered_list.insert(2, :c)
     local.process_message(remote1.make_message)
 
-    schema_update, clock_update = local.make_message.operations
-    expect(schema_update).to be_a(CRDT::SchemaUpdate)
+    clock_update = local.make_message.operations.first
     expect(clock_update).to be_a(CRDT::PeerMatrix::ClockUpdate)
     expect(clock_update.entries).to eq [
       CRDT::PeerMatrix::PeerVClockEntry.new(remote1.peer_id, 1, 2),
@@ -53,6 +59,10 @@ RSpec.describe CRDT::PeerMatrix do
 
   it 'should include the peer ID only on the first clock update' do
     local, remote1, remote2 = make_peers(3)
+    init_msg = local.make_message
+    remote1.process_message(init_msg)
+    remote2.process_message(init_msg)
+
     remote1.ordered_list.insert(0, :a)
     local.process_message(remote1.make_message)
     expect(local.make_message.operations.grep(CRDT::PeerMatrix::ClockUpdate).first.entries).to eq [

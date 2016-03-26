@@ -12,18 +12,15 @@ module CRDT
     include Enumerable
 
     # Operation to represent the insertion of an element into a list.
-    class InsertOp < Struct.new(:header, :reference_id, :value)
-      def logical_ts; header.operation_id.logical_ts; end
-    end
+    InsertOp = Struct.new(:reference_id, :value)
 
     # Operation to represent the deletion of an element from a list.
-    class DeleteOp < Struct.new(:header, :delete_id)
-      def logical_ts; header.operation_id.logical_ts; end
+    class DeleteOp
+      def ==(other); other.is_a?(DeleteOp); end
     end
 
     # Internal structure representing a list element.
-    class Item < Struct.new(:insert_id, :delete_ts, :value, :previous, :next)
-    end
+    Item = Struct.new(:insert_id, :delete_ts, :value, :previous, :next)
 
     attr_reader :peer
 
@@ -60,12 +57,12 @@ module CRDT
         right_item = item_by_index(index)
         left_id = right_item ? right_item.previous.insert_id : @tail.insert_id
       end
-      item = insert_after_id(left_id, @peer.next_id, value)
+      item = insert_after_id(left_id, peer.next_id, value)
 
-      # TODO fix hard-coded access path
-      header = CRDT::OperationHeader.new(item.insert_id, peer.default_schema_id, nil, [1])
-      op = InsertOp.new(header, item.previous && item.previous.insert_id, item.value)
-      @peer.send_operation(op)
+      raise 'characters_item_id not set' if peer.characters_item_id.nil?
+      op = CRDT::Operation.new(item.insert_id, peer.characters_item_id,
+                               InsertOp.new(item.previous && item.previous.insert_id, item.value))
+      peer.send_operation(op)
       self
     end
 
@@ -79,24 +76,22 @@ module CRDT
         left_id = right_item.previous && right_item.previous.insert_id
       end
 
-      item = insert_after_id(left_id, @peer.next_id, value)
+      item = insert_after_id(left_id, peer.next_id, value)
 
-      # TODO fix hard-coded access path
-      header = CRDT::OperationHeader.new(item.insert_id, peer.default_schema_id, nil, [1])
-      op = InsertOp.new(header, item.previous && item.previous.insert_id, item.value)
-      @peer.send_operation(op)
+      raise 'characters_item_id not set' if peer.characters_item_id.nil?
+      op = CRDT::Operation.new(item.insert_id, peer.characters_item_id,
+                               InsertOp.new(item.previous && item.previous.insert_id, item.value))
+      peer.send_operation(op)
       item.insert_id
     end
 
     # Deletes the item at the given +index+ in the list (local operation).
     def delete(index)
       item = item_by_index(index) or raise IndexError
-      item.delete_ts = @peer.next_id
+      item.delete_ts = peer.next_id
       item.value = nil
 
-      # TODO fix hard-coded access path
-      header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, nil, [1])
-      @peer.send_operation(DeleteOp.new(header, item.insert_id))
+      peer.send_operation(CRDT::Operation.new(item.delete_ts, item.insert_id, DeleteOp.new))
       self
     end
 
@@ -114,12 +109,10 @@ module CRDT
 
       while item && (num_items > 0 || item.delete_ts)
         if item.delete_ts.nil?
-          item.delete_ts = @peer.next_id
+          item.delete_ts = peer.next_id
           item.value = nil
 
-          # TODO fix hard-coded access path
-          header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, nil, [1])
-          @peer.send_operation(DeleteOp.new(header, item.insert_id))
+          peer.send_operation(CRDT::Operation.new(item.delete_ts, item.insert_id, DeleteOp.new))
           num_items -= 1
         end
 
@@ -137,12 +130,10 @@ module CRDT
 
       while item && (num_items > 0 || item.delete_ts)
         if item.delete_ts.nil?
-          item.delete_ts = @peer.next_id
+          item.delete_ts = peer.next_id
           item.value = nil
 
-          # TODO fix hard-coded access path
-          header = CRDT::OperationHeader.new(item.delete_ts, peer.default_schema_id, nil, [1])
-          @peer.send_operation(DeleteOp.new(header, item.insert_id))
+          peer.send_operation(CRDT::Operation.new(item.delete_ts, item.insert_id, DeleteOp.new))
           num_items -= 1
         end
 
@@ -155,12 +146,13 @@ module CRDT
     # Applies a remote operation to a local copy of the data structure.
     # The operation must be causally ready, as per the data structure's vector clock.
     def apply_operation(operation)
-      case operation
+      case operation.op
       when InsertOp
-        insert_after_id(operation.reference_id, operation.header.operation_id, operation.value)
+        raise "Unexpected target: #{operation.target.inspect}" if operation.target != peer.characters_item_id
+        insert_after_id(operation.op.reference_id, operation.op_id, operation.op.value)
       when DeleteOp
-        item = @items_by_id[operation.delete_id] or raise IndexError
-        item.delete_ts = operation.header.operation_id
+        item = @items_by_id[operation.target] or raise IndexError
+        item.delete_ts = operation.op_id
         item.value = nil
       else raise "Invalid operation: #{operation}"
       end

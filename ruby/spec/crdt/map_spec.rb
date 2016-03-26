@@ -1,15 +1,6 @@
 require 'crdt'
 
 RSpec.describe CRDT::Map do
-
-  # make_peers(n) creates n peers on the same channel
-  def make_peers(num_peers)
-    peer0 = CRDT::Peer.new('peer0')
-    [peer0] + (1...num_peers).map do |i|
-      CRDT::Peer.new("peer#{i}", channel_id: peer0.channel_id)
-    end
-  end
-
   context 'in local operation' do
     it 'should be empty by default' do
       peer = CRDT::Peer.new(:peer1)
@@ -40,9 +31,10 @@ RSpec.describe CRDT::Map do
       peer.make_message
       peer.cursors['foo'] = 'bar'
       expect(peer.make_message.operations).to eq [
-        CRDT::Map::PutOp.new(
-          CRDT::OperationHeader.new(CRDT::ItemID.new(2, :peer1), peer.default_schema_id, nil, [0]),
-          'foo', 'bar')
+        CRDT::Operation.new(
+          CRDT::ItemID.new(3, :peer1),
+          CRDT::ItemID.new(1, :peer1),
+          CRDT::Map::PutOp.new('foo', 'bar'))
       ]
     end
 
@@ -52,13 +44,10 @@ RSpec.describe CRDT::Map do
       peer.make_message
       peer.cursors['foo'] = 'second'
       expect(peer.make_message.operations).to eq [
-        CRDT::Map::WriteOp.new(
-          CRDT::OperationHeader.new(
-            CRDT::ItemID.new(3, :peer1),
-            peer.default_schema_id,
-            CRDT::ItemID.new(2, :peer1),
-            []),
-          'second')
+        CRDT::Operation.new(
+          CRDT::ItemID.new(4, :peer1),
+          CRDT::ItemID.new(3, :peer1),
+          CRDT::Map::WriteOp.new('second'))
       ]
     end
   end
@@ -87,8 +76,8 @@ RSpec.describe CRDT::Map do
       peer2.cursors['key'] = 'second'
       peer2.process_message(peer1.make_message)
       peer1.process_message(peer2.make_message)
-      expect(peer1.cursors.to_a.sort).to eq [['key', 'first']]
-      expect(peer2.cursors.to_a.sort).to eq [['key', 'first']]
+      expect(peer1.cursors.to_a.sort).to eq [['key', 'second']]
+      expect(peer2.cursors.to_a.sort).to eq [['key', 'second']]
     end
 
     it 'should allow another peer to overwrite a value' do

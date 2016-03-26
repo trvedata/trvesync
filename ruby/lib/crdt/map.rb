@@ -6,19 +6,14 @@ module CRDT
 
     # Operation to represent adding a new key-value pair to a map. This is only used the first time
     # a key is inserted; subsequent updates to an existing key should use WriteOp.
-    class PutOp < Struct.new(:header, :key, :value)
-      def logical_ts; header.operation_id.logical_ts; end
-    end
+    PutOp = Struct.new(:key, :value)
 
     # Operation to represent writing the value of a register, including updating the value of an
     # existing key-value pair in a map.
-    class WriteOp < Struct.new(:header, :value)
-      def logical_ts; header.operation_id.logical_ts; end
-    end
+    WriteOp = Struct.new(:value)
 
     # Internal structure representing a key-value entry in the map.
-    class Item < Struct.new(:put_id, :update_ts, :key, :value)
-    end
+    Item = Struct.new(:put_id, :update_ts, :key, :value)
 
     attr_reader :peer
 
@@ -62,12 +57,10 @@ module CRDT
       item = @items_by_key[key]
 
       if item
-        header = CRDT::OperationHeader.new(@peer.next_id, peer.default_schema_id, item.put_id, [])
-        op = WriteOp.new(header, value)
+        op = CRDT::Operation.new(peer.next_id, item.put_id, WriteOp.new(value))
       else
-        # TODO fix hard-coded access path
-        header = CRDT::OperationHeader.new(@peer.next_id, peer.default_schema_id, nil, [0])
-        op = PutOp.new(header, key, value)
+        raise 'cursors_item_id not set' if peer.cursors_item_id.nil?
+        op = CRDT::Operation.new(peer.next_id, peer.cursors_item_id, PutOp.new(key, value))
       end
 
       apply_operation(op)
@@ -76,7 +69,7 @@ module CRDT
 
     # Applies a remote operation to a local copy of the data structure.
     def apply_operation(operation)
-      case operation
+      case operation.op
       when PutOp   then put_new_item(operation)
       when WriteOp then update_existing_item(operation)
       else raise "Invalid operation: #{operation}"
@@ -86,34 +79,30 @@ module CRDT
     private
 
     def put_new_item(op)
-      raise 'PutOp is expected to be accessed from the root' if op.header.access_root
-      raise "Unexpected access path: #{op.header.access_path.inspect}" if op.header.access_path != [0]
-      existing_item = @items_by_key[op.key]
+      raise "Unexpected target: #{op.target.inspect}" if op.target != peer.cursors_item_id
+      existing_item = @items_by_key[op.op.key]
 
       if existing_item
         # Two concurrent puts for the same key occurred. Pick winner by logical timestamp.
-        if op.header.operation_id > existing_item.update_ts
-          raise 'Key mismatch for item' if op.key != existing_item.key
-          existing_item.update_ts = op.header.operation_id
-          existing_item.value = op.value
+        if op.op_id > existing_item.update_ts
+          raise 'Key mismatch for item' if op.op.key != existing_item.key
+          existing_item.update_ts = op.op_id
+          existing_item.value = op.op.value
         end
       else
-        item = Item.new(op.header.operation_id, op.header.operation_id, op.key, op.value)
-        @items_by_key[op.key] = item
-        @items_by_id[op.header.operation_id] = item
+        item = Item.new(op.op_id, op.op_id, op.op.key, op.op.value)
+        @items_by_key[item.key] = item
+        @items_by_id[item.put_id] = item
       end
     end
 
     def update_existing_item(op)
-      raise 'WriteOp is expected to have access_root' if op.header.access_root.nil?
-      raise "Unexpected access path: #{op.header.access_path.inspect}" if op.header.access_path != []
-
-      item = @items_by_id[op.header.access_root]
+      item = @items_by_id[op.target]
       raise 'WriteOp references unknown item' if item.nil?
 
-      if op.header.operation_id > item.update_ts
-        item.update_ts = op.header.operation_id
-        item.value = op.value
+      if op.op_id > item.update_ts
+        item.update_ts = op.op_id
+        item.value = op.op.value
       end
     end
   end
