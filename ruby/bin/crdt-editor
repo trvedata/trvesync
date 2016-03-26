@@ -7,7 +7,7 @@ options = {}
 
 parser = OptionParser.new do |opts|
   opts.banner = <<-BANNER.gsub(/^    /, '')
-    Usage: crdt-editor [options] file.crdt
+    Usage: crdt-editor [options] FILE
     Collaborative text editor. Press Ctrl+c to quit.
 
     Options:
@@ -24,9 +24,9 @@ parser = OptionParser.new do |opts|
 end
 
 parser.parse!
-options[:filename] = ARGV.shift
+options[:text_filename] = ARGV.shift
 
-if options[:filename].nil? || options[:websocket].nil?
+if options[:text_filename].nil? || options[:websocket].nil?
   $stderr.puts parser
   exit(1)
 end
@@ -38,14 +38,24 @@ require 'crdt/editor'
 
 File.open('/tmp/trvesync.log', 'a') do |logfile|
   options[:logger] = lambda {|msg| logfile.puts(msg); logfile.flush }
+  options[:text_filename] = File.absolute_path(options[:text_filename])
+  options[:crdt_filename] = File.join(File.dirname(options[:text_filename]),
+                                      '.' + File.basename(options[:text_filename]) + '.crdt')
 
-  if File.exists? options[:filename]
-    peer = CRDT::Peer.load(options[:filename], options)
+  if File.exists? options[:crdt_filename]
+    peer = CRDT::Peer.load(options[:crdt_filename], options)
     if options[:channel_id] && peer.channel_id != options[:channel_id]
-      raise "Invalid --join option: file #{options[:filename]} is for channel #{peer.channel_id}, but --join option specifies channel #{options[:channel_id]}"
+      raise "Invalid --join option: file #{options[:crdt_filename]} is for channel #{peer.channel_id}, but --join option specifies channel #{options[:channel_id]}"
     end
   else
     peer = CRDT::Peer.new(nil, options)
+  end
+
+  peer_contents = peer.ordered_list.to_a.join
+  file_contents = File.exists?(options[:text_filename]) ? File.read(options[:text_filename]) : ''
+
+  if peer_contents != file_contents
+    raise "The contents of the text file #{options[:text_filename]} do not match the CRDT file #{options[:crdt_filename]}."
   end
 
   CRDT::Editor.new(peer, options).run

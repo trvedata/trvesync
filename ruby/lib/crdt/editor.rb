@@ -119,6 +119,7 @@ module CRDT
 
       case key
       when :"Ctrl+q", :"Ctrl+c" then return :quit
+      when :"Ctrl+s"            then save
 
       # moving cursor
       when :left                     then move_cursor_left
@@ -276,14 +277,23 @@ module CRDT
       :delete
     end
 
-    # Saves the state of the peer to the filename given in the options. To avoid corruption in the
-    # case of an inopportune crash or power failure, first writes the data to a temporary file, then
-    # renames it to the correct filename.
+    # Saves the state of the peer to the filename given in the options.
     def save
-      return if @options[:filename].nil?
-      filename = File.absolute_path(@options[:filename])
+      if @options[:text_filename]
+        write_safely(@options[:text_filename]) {|file| file.write(peer.ordered_list.to_a.join) }
+      end
+
+      if @options[:crdt_filename]
+        write_safely(@options[:crdt_filename]) {|file| @peer.save(file) }
+      end
+    end
+
+    # Writes to a file. To avoid corruption in the case of an inopportune crash or power failure,
+    # first writes the data to a temporary file, then renames it to the correct filename.
+    def write_safely(filename, &block)
+      filename = File.absolute_path(filename)
       temp_fn = File.join(File.dirname(filename), '.' + File.basename(filename) + ".tmp.#{Process.pid}")
-      File.open(temp_fn, 'wb') {|file| @peer.save(file) }
+      File.open(temp_fn, 'wb') {|file| yield file }
       File.rename(temp_fn, filename)
     end
   end
