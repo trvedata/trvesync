@@ -99,7 +99,7 @@ module CRDT
     #         'nextTS' => 123,
     #         'vclock' => [
     #           {
-    #             'peerID' => 'asdfasdf',
+    #             'peerIndex' => 3,
     #             'lastSeqNo' => 42
     #           },
     #           ...
@@ -119,8 +119,8 @@ module CRDT
         entries = []
 
         peer['vclock'].each_with_index do |entry, entry_index|
-          entries << PeerMatrix::PeerVClockEntry.new(
-            bin_to_hex(entry['peerID']), entry_index, entry['lastSeqNo'])
+          peer_id = peer_matrix.peer_index_to_id(entry['peerIndex'])
+          entries << PeerMatrix::PeerVClockEntry.new(peer_id, entry_index, entry['lastSeqNo'])
         end
 
         clock_update = PeerMatrix::ClockUpdate.new(peer['nextTS'], entries)
@@ -137,7 +137,10 @@ module CRDT
           'peerID' => hex_to_bin(peer_id),
           'nextTS' => peer_matrix.next_ts_by_peer_id[peer_id] || 0,
           'vclock' => peer_matrix.matrix[peer_index].map {|entry|
-            {'peerID' => hex_to_bin(entry.peer_id), 'lastSeqNo' => entry.last_seq_no}
+            {
+              'peerIndex' => peer_matrix.peer_id_to_index(entry.peer_id),
+              'lastSeqNo' => entry.last_seq_no
+            }
           }
         }
       end

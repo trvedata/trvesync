@@ -359,9 +359,11 @@
                   name: PeerVClockEntry
                   type: record
                   fields:
-                    - name: peerID
-                      type: PeerID
-                      doc: Globally unique identifier of the peer described in this record.
+                    - name: peerIndex
+                      type: long
+                      doc: >-
+                        The peer index that the local peer has assigned to the peer described in
+                        this record.
                     - name: lastSeqNo
                       type: long
                       default: 0
