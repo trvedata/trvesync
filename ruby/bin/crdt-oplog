@@ -49,7 +49,7 @@ peer.message_log.each do |message|
       app_op = encode_binary(operation_reader.read(decoder))
       app_op.merge('target' => op_hash['target'])
     else
-      op_hash
+      encode_binary(op_hash)
     end
   end
   puts JSON.generate(msg_hash)
