@@ -12,6 +12,7 @@ module CRDT
       @logger = options[:logger] || lambda {|msg| }
       @network = CRDT::Network.new(peer, options[:websocket], @logger)
       @canvas_size = [0, 0]
+      @scroll_lines = 0
     end
 
     # Draw app and redraw after each keystroke
@@ -99,9 +100,16 @@ module CRDT
 
       @item_ids.last << nil # insertion point for appending at the end
       @cursor = [@item_ids.last.size - 1, @item_ids.size - 1] if @peer.cursor_id.nil?
-      @lines << '' while @lines.size < @canvas_size[1] - 1
-      @lines << "Channel: #{@peer.channel_id}"[0...@canvas_size[0]]
-      screen.draw(@lines.join("\n"), [], @cursor.reverse)
+
+      @scroll_lines = [@scroll_lines, @cursor[1]].min
+      if @cursor[1] - @scroll_lines >= @canvas_size[1] - 1
+        @scroll_lines = @cursor[1] - (@canvas_size[1] - 1) + 1
+      end
+
+      viewport = @lines.slice(@scroll_lines, @canvas_size[1] - 1)
+      viewport << '' while viewport.size < @canvas_size[1] - 1
+      viewport << "Channel: #{@peer.channel_id}"[0...@canvas_size[0]]
+      screen.draw(viewport.join("\n"), [], [@cursor[1] - @scroll_lines, @cursor[0]])
       screen.debug_key(@last_key) if @last_key && @options[:debug_keys]
     end
 

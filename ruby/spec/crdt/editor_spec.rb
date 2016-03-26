@@ -79,8 +79,8 @@ RSpec.describe CRDT::Editor do
     end
 
     it 'should break on newlines' do
-      keys "First\nand second line (the second wraps)\n\nNew paragraph"
-      expect(@screen).to display "First\nand second line \n(the second wraps)\n\nNew paragraph*\n"
+      keys "First\nand second line (the second wraps)\nNew line"
+      expect(@screen).to display "First\nand second line \n(the second wraps)\nNew line*\n"
     end
 
     it 'should rewrap after deletions' do
@@ -169,6 +169,19 @@ RSpec.describe CRDT::Editor do
       expect(@screen).to display "Hyphen-separated \nwords*, \npunctuation... and \nmore!\n"
       keys [:"Ctrl+right"] * 10
       expect(@screen).to display "Hyphen-separated \nwords, \npunctuation... and \nmore!*\n"
+    end
+  end
+
+  context 'scrolling' do
+    it 'should show as much as can fit on screen' do
+      keys "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight"
+      expect(@screen).to display "five\nsix\nseven\neight*\n"
+      keys [:up] * 4
+      expect(@screen).to display "four*\nfive\nsix\nseven\n"
+      keys [:up] * 3
+      expect(@screen).to display "one*\ntwo\nthree\nfour\n"
+      keys [:down] * 4
+      expect(@screen).to display "two\nthree\nfour\nfive*\n"
     end
   end
 
