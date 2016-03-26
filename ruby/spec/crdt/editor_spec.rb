@@ -144,6 +144,32 @@ RSpec.describe CRDT::Editor do
       keys :up
       expect(@screen).to display "First* line is long\nShort\nThird is also long\n\n"
     end
+
+    it 'should support skipping words backwards' do
+      keys 'Hyphen-separated words, punctuation... and more!'
+      expect(@screen).to display "Hyphen-separated \nwords, \npunctuation... and \nmore!*\n"
+      keys :"Ctrl+left"
+      expect(@screen).to display "Hyphen-separated \nwords, \npunctuation... and \n*more!\n"
+      keys :"Ctrl+left"
+      expect(@screen).to display "Hyphen-separated \nwords, \npunctuation... *and \nmore!\n"
+      keys :"Ctrl+left"
+      expect(@screen).to display "Hyphen-separated \nwords, \n*punctuation... and \nmore!\n"
+      keys [:"Ctrl+left"] * 10
+      expect(@screen).to display "*Hyphen-separated \nwords, \npunctuation... and \nmore!\n"
+    end
+
+    it 'should support skipping words forwards' do
+      keys 'Hyphen-separated words, punctuation... and more!', [:up] * 4
+      expect(@screen).to display "*Hyphen-separated \nwords, \npunctuation... and \nmore!\n"
+      keys :"Ctrl+right"
+      expect(@screen).to display "Hyphen*-separated \nwords, \npunctuation... and \nmore!\n"
+      keys :"Ctrl+right"
+      expect(@screen).to display "Hyphen-separated* \nwords, \npunctuation... and \nmore!\n"
+      keys :"Ctrl+right"
+      expect(@screen).to display "Hyphen-separated \nwords*, \npunctuation... and \nmore!\n"
+      keys [:"Ctrl+right"] * 10
+      expect(@screen).to display "Hyphen-separated \nwords, \npunctuation... and \nmore!*\n"
+    end
   end
 
   context 'editing' do

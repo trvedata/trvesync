@@ -9,7 +9,8 @@ module CRDT
     def initialize(peer, options={})
       @peer = peer or raise ArgumentError, 'peer must be set'
       @options = options
-      @network = CRDT::Network.new(peer, options[:websocket], options[:logger] || lambda {|msg| })
+      @logger = options[:logger] || lambda {|msg| }
+      @network = CRDT::Network.new(peer, options[:websocket], @logger)
       @canvas_size = [0, 0]
     end
 
@@ -112,13 +113,16 @@ module CRDT
       when :"Ctrl+q", :"Ctrl+c" then return :quit
 
       # moving cursor
-      when :left, :right, :up, :down then move_cursor key
-      when :page_up                  then move_cursor :page_up
-      when :page_down                then move_cursor :page_down
-      when :"Ctrl+left",  :"Alt+b"   then move_cursor :word_left
-      when :"Ctrl+right", :"Alt+f"   then move_cursor :word_right
-      when :home, :"Ctrl+a"          then move_cursor :line_begin
-      when :end,  :"Ctrl+e"          then move_cursor :line_end
+      when :left                     then move_cursor_left
+      when :right                    then move_cursor_right
+      when :up                       then move_cursor_up
+      when :down                     then move_cursor_down
+      when :page_up                  then move_cursor_page_up
+      when :page_down                then move_cursor_page_down
+      when :"Ctrl+left",  :"Alt+b"   then move_cursor_word_left
+      when :"Ctrl+right", :"Alt+f"   then move_cursor_word_right
+      when :home, :"Ctrl+a"          then move_cursor_line_begin
+      when :end,  :"Ctrl+e"          then move_cursor_line_end
 
       # editing text
       when :enter     then modified = true; insert("\n")
@@ -137,49 +141,110 @@ module CRDT
 
     private
 
-    def move_cursor(command)
-      case command
-      when :left
-        if @cursor[0] > 0
-          @cursor = [@cursor[0] - 1, @cursor[1]]
-        elsif @cursor[1] > 0
-          @cursor[1] -= 1
-          @cursor[0] = end_of_line
-        end
-        @cursor_x = @cursor[0]
-
-      when :right
-        if @cursor[0] < end_of_line
-          @cursor = [@cursor[0] + 1, @cursor[1]]
-        elsif @cursor[1] < @item_ids.size - 1
-          @cursor = [0, @cursor[1] + 1]
-        end
-        @cursor_x = @cursor[0]
-
-      when :up
-        if @cursor[1] > 0
-          @cursor[1] -= 1
-          @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
-        else
-          @cursor[0] = @cursor_x = 0
-        end
-
-      when :down
-        if @cursor[1] < @item_ids.size - 1
-          @cursor[1] += 1
-          @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
-        else
-          @cursor[0] = @cursor_x = end_of_line
-        end
-
-      when :line_begin
-        @cursor[0] = @cursor_x = 0
-
-      when :line_end
+    def move_cursor_left
+      if @cursor[0] > 0
+        @cursor = [@cursor[0] - 1, @cursor[1]]
+      elsif @cursor[1] > 0
+        @cursor[1] -= 1
         @cursor[0] = end_of_line
-        @cursor_x = @canvas_size[0]
       end
 
+      @cursor_x = @cursor[0]
+      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+    end
+
+    def move_cursor_right
+      if @cursor[0] < end_of_line
+        @cursor = [@cursor[0] + 1, @cursor[1]]
+      elsif @cursor[1] < @item_ids.size - 1
+        @cursor = [0, @cursor[1] + 1]
+      end
+
+      @cursor_x = @cursor[0]
+      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+    end
+
+    def move_cursor_up
+      if @cursor[1] > 0
+        @cursor[1] -= 1
+        @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
+      else
+        @cursor[0] = @cursor_x = 0
+      end
+
+      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+    end
+
+    def move_cursor_down
+      if @cursor[1] < @item_ids.size - 1
+        @cursor[1] += 1
+        @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
+      else
+        @cursor[0] = @cursor_x = end_of_line
+      end
+
+      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+    end
+
+    def move_cursor_page_up
+      # TODO
+    end
+
+    def move_cursor_page_down
+      # TODO
+    end
+
+    def move_cursor_word_left
+      seen_word_char = false
+      last_item_id = @peer.cursor_id
+      is_first_item = true
+
+      @peer.ordered_list.each_item(@peer.cursor_id, :backwards) do |item|
+        next if item.delete_ts
+        if is_first_item
+          is_first_item = false
+          next
+        end
+
+        if item.value =~ /[[:word:]]/
+          seen_word_char = true
+        elsif seen_word_char
+          @peer.cursor_id = last_item_id
+          return
+        end
+
+        last_item_id = item.insert_id
+      end
+
+      @peer.cursor_id = last_item_id
+    end
+
+    def move_cursor_word_right
+      return if @peer.cursor_id.nil?
+      seen_word_char = false
+
+      @peer.ordered_list.each_item(@peer.cursor_id, :forwards) do |item|
+        next if item.delete_ts
+
+        if item.value =~ /[[:word:]]/
+          seen_word_char = true
+        elsif seen_word_char
+          @peer.cursor_id = item.insert_id
+          return
+        end
+      end
+
+      @peer.cursor_id = nil
+    end
+
+    def move_cursor_line_begin
+      @cursor[0] = @cursor_x = 0
+      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+    end
+
+    def move_cursor_line_end
+      @cursor[0] = end_of_line
+      @cursor_x = @canvas_size[0]
       @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
     end
 

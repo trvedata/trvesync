@@ -42,11 +42,16 @@ module CRDT
       end
     end
 
-    def each_item(&block)
-      item = @head
+    def each_item(start=nil, direction=:forwards, &block)
+      item = if start
+               @items_by_id[start]
+             else
+               direction == :forwards ? @head : @tail
+             end
+
       while item
         yield item
-        item = item.next
+        item = (direction == :forwards ? item.next : item.previous)
       end
     end
 
