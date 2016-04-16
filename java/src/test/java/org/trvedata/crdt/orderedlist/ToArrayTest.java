@@ -1,4 +1,4 @@
-package org.trvedata.crdt.test.orderedlist;
+package org.trvedata.crdt.orderedlist;
 
 import static org.junit.Assert.assertEquals;
 

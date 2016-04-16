@@ -1,4 +1,4 @@
-package org.trvedata.crdt.test;
+package org.trvedata.crdt;
 
 import static org.junit.Assert.assertEquals;
 
