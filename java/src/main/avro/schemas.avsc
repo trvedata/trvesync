@@ -1,0 +1,590 @@
+[
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "PeerID",
+    "type": "fixed",
+    "size": 32,
+    "doc": "256-bit globally unique identifier that uniquely identifies a particular device (client node). For now this is just random, though it could also be a hash of the device's public key, or something along those lines."
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "ItemID",
+    "type": "record",
+    "doc": "A compact identifier that is unique within one data structure, and totally ordered. It is used to identify an item within a data structure (e.g. an element in a list) unambiguously.",
+    "fields": [
+      {
+        "name": "logicalTS",
+        "type": "long",
+        "doc": "A logical timestamp (Lamport clock); equivalently, the sum of all entries in a vector clock."
+      },
+      {
+        "name": "peerIndex",
+        "type": "long",
+        "doc": "Identifies the peer on which this ItemID originated. This number is functionally equivalent to a PeerID, but it is more compact: it is the index of the peer in the PeerState's array of peers. The ordering of this array is different on different peers, so the index is translated from the remote view to the local view on arrival."
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "ClockUpdate",
+    "type": "record",
+    "doc": "A ClockUpdate may be sent as part of a message broadcast from one peer to all other peers, indicating any change of vector clock at the sender. This also identifies the causal dependencies of any following operations.",
+    "fields": [
+      {
+        "name": "nextTS",
+        "type": "long",
+        "doc": "Counter portion of the logical timestamp (Lamport timestamp) to be used for constructing the ItemID of the next operation following this ClockUpdate. Recipients can construct the ItemID by combining this logicalTS with the peerIndex of the sender. Subsequent operations will have logicalTS incremented by 1 for each operation, until the next ClockUpdate advances logicalTS. This field must never be less than or equal to a previous operation's logicalTS, to ensure that Lamport timestamps are always monotonically increasing."
+      },
+      {
+        "name": "updates",
+        "doc": "List of any changes that occurred in the sender peer's vector clock since the last ClockUpdate message was sent. For any peers not listed, the clock value has not changed. The elements of this array must be in order of ascending peerIndex.",
+        "type": {
+          "type": "array",
+          "items": {
+            "name": "PeerClockUpdate",
+            "type": "record",
+            "doc": "Records that the sender of this update has received operations from a particular peer. The first time that a particular peer is seen, this update also serves to notify others about the peerIndex that this sender will use as compact representation of the PeerID.",
+            "fields": [
+              {
+                "name": "peerID",
+                "type": [
+                  "null",
+                  "PeerID"
+                ],
+                "default": null,
+                "doc": "Globally unique identifier for the peer being described. This only needs to be included the first time an update is sent for a particular peer; on subsequent updates, the peerIndex is sufficient, and so the peerID can be set to null."
+              },
+              {
+                "name": "peerIndex",
+                "type": "long",
+                "doc": "Index of this peer in the sender PeerState's array of peers. This index will serve as compact representation of the PeerID in subsequent updates from the same sender."
+              },
+              {
+                "name": "lastSeqNo",
+                "type": "long",
+                "doc": "Highest message sequence number that the sender has seen from this peer."
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "SchemaUpdate",
+    "type": "record",
+    "doc": "A SchemaUpdate operation is broadcast when a new version of the application schema comes into use for the first time. Subsequent CRDT operations can refer to the ItemID of this schema update operation in order to make clear the schema version in which an edit is made. Schema evolution allows peers using different versions of the schema to interoperate.",
+    "fields": [
+      {
+        "name": "appVersion",
+        "type": "string",
+        "default": "",
+        "doc": "Application version number that uses this schema (for informational purposes)."
+      },
+      {
+        "name": "appSchema",
+        "type": "string",
+        "doc": "Avro schema for a document, in JSON format, as defined by the application."
+      },
+      {
+        "name": "opSchema",
+        "type": "string",
+        "doc": "Avro schema for a single CRDT modification operation, used to parse Operation records. This schema is automatically generated from the appSchema and may contain various different operation types, for example register-writing operations for various different datatypes that occur in the appSchema."
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "Operation",
+    "type": "record",
+    "doc": "Encoding of a single mutation made to a CRDT object.",
+    "fields": [
+      {
+        "name": "target",
+        "type": "ItemID",
+        "doc": "Identifies the object being modified in this operation, by referencing the logical timestamp of the operation that created the object in question. In the special case of the root object of a document being created, this references the operation itself, but otherwise it always references a prior operation."
+      },
+      {
+        "name": "operation",
+        "type": "bytes",
+        "doc": "The Avro encoding of a AppOperation record, which contains the various application-specific operation types. Encoded using the opSchema in the SchemaUpdate referenced in the message header."
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "Message",
+    "type": "record",
+    "doc": "Packet of information that is broadcast from one peer to all other peers.",
+    "fields": [
+      {
+        "name": "schemaID",
+        "type": "ItemID",
+        "doc": "Reference to a prior SchemaUpdate operation that defined the application data schema being used in this operation. The operations are decoded using the opSchema given in that message."
+      },
+      {
+        "name": "timestamp",
+        "type": "long",
+        "doc": "The wall-clock time at which this message was created, in milliseconds since the 1970 epoch, according to the local clock on the node that sent the message. This field is used purely for informational purposes; none of the correctness of the algorithms depends on time."
+      },
+      {
+        "name": "operations",
+        "doc": "Sequence of operations that have taken place at the origin peer.",
+        "type": {
+          "type": "array",
+          "items": [
+            "ClockUpdate",
+            "SchemaUpdate",
+            "Operation"
+          ]
+        }
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "InitializeRecordField",
+    "type": "record",
+    "doc": "Every time an instance of a record of the application schema is created in the document (at a minimum, when the root object is created), one of these operations must be issued for every field defined in that record type. The purpose is to assign an ItemID to every field (so that subsequent register-setting operations can target it). This operation does not assign a value; that is done in a subsequent operation.",
+    "fields": [
+      {
+        "name": "fieldNum",
+        "type": "int",
+        "doc": "The index of the field being initialized in the list of fields for the targeted record, as defined in the appSchema, indexed starting from 0."
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "PutCursor",
+    "type": "record",
+    "doc": "Operation recording the fact that a key-value pair was put into a map object. The map maintains a unique value per key, so if there are multiple concurrent puts for the same key, the values are merged together according to the value CRDT merge function.",
+    "fields": [
+      {
+        "name": "mapKey",
+        "type": "PeerID",
+        "doc": "The key we're putting into the map."
+      },
+      {
+        "name": "mapValue",
+        "type": [
+          "null",
+          "ItemID"
+        ],
+        "doc": "The value we're putting into the map."
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "SetCursor",
+    "type": "record",
+    "doc": "Operation recording the fact that the value of a register was overwritten.",
+    "fields": [
+      {
+        "name": "registerValue",
+        "type": [
+          "null",
+          "ItemID"
+        ],
+        "doc": "The new value of the register, encoded according to the register schema definition."
+      },
+      {
+        "name": "isSetCursor",
+        "type": "boolean",
+        "doc": "Unnecessary placeholder field. This field exists only because the Ruby Avro implementation handles unions badly: since the only field in this record is nullable, any hash matches the schema for the SetCursor record. Adding an additional required field helps distinguish this record type from other types in the union."
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "InsertCharacter",
+    "type": "record",
+    "doc": "Operation recording the fact that an item was inserted into an ordered list.",
+    "fields": [
+      {
+        "name": "referenceID",
+        "type": [
+          "null",
+          "ItemID"
+        ],
+        "doc": "Identifies the location at which the new item should be inserted. If null, the item is inserted at the beginning of the list. Otherwise, this field is the ID of the item immediately to the left of the inserted item (i.e. its immediate predecessor)."
+      },
+      {
+        "name": "value",
+        "type": "string",
+        "doc": "The value inserted into the list, encoded according to the list schema definition."
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "DeleteCharacter",
+    "type": "record",
+    "doc": "Operation recording the fact that an item was deleted from an ordered list.",
+    "fields": [
+      {
+        "name": "isDeleteCharacter",
+        "type": "boolean",
+        "doc": "Unnecessary placeholder field. This field exists only because the Ruby Avro implementation handles unions badly: since this record has no other fields, any hash matches the schema for the DeleteCharacter record. Adding an additional required field helps distinguish this record type from other types in the union."
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "AppOperation",
+    "type": "record",
+    "fields": [
+      {
+        "name": "operation",
+        "type": [
+          "InitializeRecordField",
+          "PutCursor",
+          "SetCursor",
+          "InsertCharacter",
+          "DeleteCharacter"
+        ]
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "OrderedList",
+    "type": "record",
+    "doc": "Stores a peer's local state for a CRDT containing an ordered list of items.",
+    "fields": [
+      {
+        "name": "items",
+        "doc": "The items of the list, in correct application order, including tombstones.",
+        "default": [],
+        "type": {
+          "type": "array",
+          "items": {
+            "name": "OrderedListItem",
+            "type": "record",
+            "doc": "One item of an ordered list.",
+            "fields": [
+              {
+                "name": "id",
+                "type": "ItemID",
+                "doc": "Immutable identifier for this list item, assigned when the item is inserted. The ID is unique within this list, but not globally unique. Subsequent operations that need to refer to a particular item in the list may use this identifier."
+              },
+              {
+                "name": "value",
+                "type": [
+                  "null",
+                  "string"
+                ],
+                "doc": "The application-specified value of this list item. Set to null when the item is deleted from the list."
+              },
+              {
+                "name": "deleteTS",
+                "type": [
+                  "null",
+                  "ItemID"
+                ],
+                "doc": "Tombstone timestamp. As long as the list item has not been deleted, this field is set to null. When it is deleted, the field is set to the timestamp of the deletion operation."
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "TextDocument",
+    "type": "record",
+    "fields": [
+      {
+        "name": "cursors",
+        "type": {
+          "type": "array",
+          "items": {
+            "name": "CursorByPeer",
+            "type": "record",
+            "fields": [
+              {
+                "name": "id",
+                "type": "ItemID",
+                "doc": "Immutable identifier for this map item, assigned when the item is put into the map."
+              },
+              {
+                "name": "updateTS",
+                "type": "ItemID",
+                "doc": "Logical timestamp of the operation that last updated the value for this map item. This is used to resolve concurrent updates (in LWW register fashion). Note that in the particular case of a map of cursor positions, this timestamp actually isn't needed, since it is keyed by PeerID and each peer only writes its own entry, so the registers are single-writer. However, we're including it anyway for the sake of generality of the map code."
+              },
+              {
+                "name": "key",
+                "type": "PeerID",
+                "doc": "The ID of the peer whose cursor position is described here. It is assumed that the array contains only one entry for a given peer, so the peer is effectively the key of a map data structure. (We use an array instead of an Avro map because Avro maps only support string keys.)"
+              },
+              {
+                "name": "value",
+                "type": [
+                  "null",
+                  "ItemID"
+                ],
+                "doc": "The unique ID of the character at the current cursor position, or null if the cursor is currently at the end of the document. This is the character that would be deleted if you press the delete key. Pressing backspace would delete the character before the current cursor position, and typing a letter would insert the letter before the current cursor position. Since this field is only set by the peer described in the key field, it is single-writer, and thus does not require a logical timestamp for LWW conflict resolution."
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "characters",
+        "type": "OrderedList"
+      }
+    ]
+  },
+  {
+  	"namespace": "org.trvedata.crdt.avro", 
+    "name": "PeerState",
+    "type": "record",
+    "doc": "Records the state of a peer device and its knowledge about other peers. This structure is written to stable storage when a peer shuts down, and loaded when it comes back up.",
+    "fields": [
+      {
+        "name": "channelID",
+        "doc": "Globally unique identifier of the message channel on the server on which all edits of this document are stored and broadcast.",
+        "type": {
+          "name": "ChannelID",
+          "type": "fixed",
+          "size": 16
+        }
+      },
+      {
+        "name": "channelOffset",
+        "type": "long",
+        "default": -1,
+        "doc": "Every message on a channel has a monotonically increasing offset. This field stores the highest message offset that this peer has received. It is used when reconnecting to the server after some time offline, to catch up on any messages that were added to the channel while the client was away. The offset is initially -1 (if no message has been received)."
+      },
+      {
+        "name": "defaultSchemaID",
+        "type": "ItemID",
+        "doc": "The operation ID of the SchemaUpdate message that recorded the application schema on the channel. This ItemID is embedded in the header of operations so that other peers know what schema the operations refer to."
+      },
+      {
+        "name": "cursorsItemID",
+        "type": "ItemID",
+        "doc": "The operation target to use for modifications to the map of cursor positions."
+      },
+      {
+        "name": "charactersItemID",
+        "type": "ItemID",
+        "doc": "The operation target to sue for modifications to the list of characters."
+      },
+      {
+        "name": "peers",
+        "doc": "List of all the peers that this peer is aware of. The first entry in this array is this peer itself (the one on which this structure is stored), subsequent entries are other peers.",
+        "type": {
+          "type": "array",
+          "items": {
+            "name": "PeerEntry",
+            "type": "record",
+            "doc": "Everything that this peer knows about some other peer.",
+            "fields": [
+              {
+                "name": "peerID",
+                "type": "PeerID",
+                "doc": "Globally unique identifier of the peer described in this record."
+              },
+              {
+                "name": "nextTS",
+                "type": "long",
+                "doc": "The counter portion of the logical timestamp that should be applied to the next operation received from this peer. By default this is the counter from the last operation incremented by 1, but ClockUpdate operations may from time to time make this value jump forwards."
+              },
+              {
+                "name": "vclock",
+                "doc": "For each peer we record a vector clock that summarizes that peer's view of the world. The first entry in this array is always that peer's view of itself, and subsequent entries are its view of other peers. The index of a peer in this array is often used as a more compact alternative to the PeerID.",
+                "type": {
+                  "type": "array",
+                  "items": {
+                    "name": "PeerVClockEntry",
+                    "type": "record",
+                    "fields": [
+                      {
+                        "name": "peerIndex",
+                        "type": "long",
+                        "doc": "The peer index that the local peer has assigned to the peer described in this record."
+                      },
+                      {
+                        "name": "lastSeqNo",
+                        "type": "long",
+                        "default": 0,
+                        "doc": "The highest senderSeqNo we have seen on messages from this peer. We expect messages from a given peer to be sequentially numbered (with no gaps in the sequence)."
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "messageLog",
+        "doc": "List of all the encoded messages that constitute the state of this document. Includes both messages that originated on other peers and messages that originated locally. Also includes operations that have not yet been sent to or acknowledged by the server.",
+        "type": {
+          "type": "array",
+          "items": {
+            "name": "MessageLogEntry",
+            "type": "record",
+            "doc": "One message that has been broadcast or will be broadcast on this document's channel.",
+            "fields": [
+              {
+                "name": "senderPeerIndex",
+                "type": "long",
+                "doc": "The local peer index of the sender of the message (i.e. the index of the sender in the PeerState's array of peers)."
+              },
+              {
+                "name": "senderSeqNo",
+                "type": "long",
+                "doc": "The sequence number that the sender has assigned to the message. It must be strictly incrementing per sender, starting at 1 for the first message."
+              },
+              {
+                "name": "offset",
+                "type": "long",
+                "doc": "The offset that the server has assigned to the message. It is monotonically increasing but may have gaps in the sequence. Messages that have not yet been committed to the server have an offset of -1."
+              },
+              {
+                "name": "payload",
+                "type": "bytes",
+                "doc": "The message contents, currently a Message record in Avro binary encoding (may be encrypted and signed in future)."
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "data",
+        "type": "TextDocument",
+        "doc": "The actual data structure being maintained at this peer."
+      }
+    ]
+  },
+  {
+    "name": "ChannelID",
+    "namespace": "org.trvedata.trvedb.avro",
+    "type": "fixed",
+    "size": 16
+  },
+  {
+    "name": "PeerID",
+    "namespace": "org.trvedata.trvedb.avro",
+    "type": "fixed",
+    "size": 32
+  },
+  {
+    "name": "SendMessage",
+    "namespace": "org.trvedata.trvedb.avro",
+    "type": "record",
+    "doc": "Sent from client to server, requesting that a message be published to a particular channel.",
+    "fields": [
+      {
+        "name": "channelID",
+        "type": "ChannelID"
+      },
+      {
+        "name": "senderSeqNo",
+        "type": "long"
+      },
+      {
+        "name": "payload",
+        "type": "bytes"
+      }
+    ]
+  },
+  {
+    "name": "SubscribeToChannel",
+    "namespace": "org.trvedata.trvedb.avro",
+    "type": "record",
+    "doc": "Sent from client to server, subscribing to all messages in a particular channel.",
+    "fields": [
+      {
+        "name": "channelID",
+        "type": "ChannelID"
+      },
+      {
+        "name": "startOffset",
+        "type": "long"
+      }
+    ]
+  },
+  {
+    "name": "ReceiveMessage",
+    "namespace": "org.trvedata.trvedb.avro",
+    "type": "record",
+    "doc": "Sent from server to client, indicating that a message was received on a particular channel. This may be a message sent by the same client, or by a different client.",
+    "fields": [
+      {
+        "name": "channelID",
+        "type": "ChannelID",
+        "doc": "The globally unique identifier of the channel on which the message was received."
+      },
+      {
+        "name": "senderID",
+        "type": "PeerID",
+        "doc": "The globally unique identifier of the peer that sent this message."
+      },
+      {
+        "name": "senderSeqNo",
+        "type": "long",
+        "doc": "The sequence number that the sender has assigned to the message. It must be strictly incrementing per sender and per channel, starting at 1 for the first message."
+      },
+      {
+        "name": "offset",
+        "type": "long",
+        "doc": "The offset that the server has assigned to the message. It is monotonically increasing within a channel, but may have gaps in the sequence."
+      },
+      {
+        "name": "payload",
+        "type": "bytes"
+      }
+    ]
+  },
+  {
+    "name": "SendMessageError",
+    "namespace": "org.trvedata.trvedb.avro",
+    "type": "record",
+    "doc": "Sent from server to client if the client sent a SendMessage request with a sequence number that jumped forwards or backwards.",
+    "fields": [
+      {
+        "name": "channelID",
+        "type": "ChannelID"
+      },
+      {
+        "name": "lastKnownSeqNo",
+        "type": "long"
+      }
+    ]
+  },
+  {
+    "name": "ClientToServer",
+    "namespace": "org.trvedata.trvedb.avro",
+    "type": "record",
+    "fields": [
+      {
+        "name": "message",
+        "type": [
+          "SendMessage",
+          "SubscribeToChannel"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ServerToClient",
+    "namespace": "org.trvedata.trvedb.avro",
+    "type": "record",
+    "fields": [
+      {
+        "name": "message",
+        "type": [
+          "ReceiveMessage",
+          "SendMessageError"
+        ]
+      }
+    ]
+  }
+]
