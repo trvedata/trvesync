@@ -1,21 +1,19 @@
 package org.trvedata.crdt;
 
-import java.util.Deque;
-
-import org.trvedata.crdt.operation.Operation;
+import org.trvedata.crdt.operation.OperationList;
 
 public class Message {
 	private PeerID originPeerId;
 	private long msgCounter;
-	private Deque<Operation> operations;
+	private OperationList operations;
 
-	public Message(PeerID originPeerId, long msgCount, Deque<Operation> operations) {
+	public Message(PeerID originPeerId, long msgCount, OperationList operations) {
 		this.originPeerId = originPeerId;
 		this.msgCounter = msgCount;
 		this.operations = operations;
 	}
 
-	public Deque<Operation> getOperations() {
+	public OperationList getOperations() {
 		return operations;
 	}
 

@@ -66,7 +66,7 @@ public class GeneratingOperationsTest {
 	public void testIncludeDetailsOfRemoveOperation() { // should include details of a remove operation
 		OrderedListPeer<Character> peer = new OrderedListPeer<Character>("peer1");
 		peer.getOrderedList().insert(0, 'a').remove(0);
-		assertEquals(peer.makeMessage().getOperations().pollLast(), new DeleteOp(new ItemID(1, new PeerID("peer1")), new ItemID(2, new PeerID("peer1"))));
+		assertEquals(peer.makeMessage().getOperations().getLast(), new DeleteOp(new ItemID(1, new PeerID("peer1")), new ItemID(2, new PeerID("peer1"))));
 	}
 
 	@Test

@@ -9,9 +9,10 @@ import java.util.Map;
 import org.trvedata.crdt.operation.ChangingOperation;
 import org.trvedata.crdt.operation.ClockUpdate;
 import org.trvedata.crdt.operation.LocalClockUpdate;
+import org.trvedata.crdt.operation.MessageHistory;
 import org.trvedata.crdt.operation.MessageProcessed;
 import org.trvedata.crdt.operation.Operation;
-import org.trvedata.crdt.operation.MessageHistory;
+import org.trvedata.crdt.operation.OperationList;
 import org.trvedata.crdt.orderedlist.OrderedList;
 
 public class Peer {
@@ -63,7 +64,8 @@ public class Peer {
 
 	public Message makeMessage() {
 		this.sendClockUpdateIfNotEmpty();
-		final Message message = new Message(this.peerId, this.peerMatrix.incrementMsgCount(), this.sendBuf);
+		final OperationList operationList = OperationList.create(sendBuf);
+		final Message message = new Message(peerId, peerMatrix.incrementMsgCount(), operationList);
 		this.sendBuf = new ArrayDeque<Operation>();
 		return message;
 	}

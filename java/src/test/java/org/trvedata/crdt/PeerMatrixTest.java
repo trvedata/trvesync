@@ -4,17 +4,13 @@ import static org.junit.Assert.assertEquals;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Deque;
 import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.trvedata.crdt.Message;
-import org.trvedata.crdt.PeerID;
-import org.trvedata.crdt.PeerIndex;
-import org.trvedata.crdt.PeerVClockEntry;
 import org.trvedata.crdt.operation.ClockUpdate;
 import org.trvedata.crdt.operation.Operation;
+import org.trvedata.crdt.operation.OperationList;
 import org.trvedata.crdt.orderedlist.OrderedListPeer;
 
 public class PeerMatrixTest {
@@ -59,7 +55,7 @@ public class PeerMatrixTest {
         remote1.getOrderedList().insert(2, 'c');
         local.processMessage(remote1.makeMessage());
 
-        Deque<Operation> messageOperations = local.makeMessage().getOperations();
+        OperationList messageOperations = local.makeMessage().getOperations();
         Assert.assertFalse(messageOperations.isEmpty());
         Operation clockUpdate = messageOperations.getFirst();
         assertEquals(clockUpdate instanceof ClockUpdate, true);
