@@ -3,19 +3,18 @@ package org.trvedata.crdt.orderedlist;
 import org.trvedata.crdt.ItemID;
 import org.trvedata.crdt.operation.ChangingOperation;
 
-public class InsertOp<T> implements ChangingOperation {
+public class InsertOp<T> extends ChangingOperation {
 	private ItemID referenceId;
-	private ItemID newId;
 	private T value;
 
 	public InsertOp(ItemID referenceId, ItemID newId, T value) {
+		super(newId);
 		this.referenceId = referenceId;
-		this.newId = newId;
 		this.value = value;
 	}
 
 	public long logicalTs() {
-		return this.newId.getLogicalTs();
+		return this.getInsertId().getLogicalTs();
 	}
 
 	public ItemID getReferenceId() {
@@ -26,12 +25,8 @@ public class InsertOp<T> implements ChangingOperation {
 		this.referenceId = referenceId;
 	}
 
-	public ItemID getNewId() {
-		return newId;
-	}
-
-	public void setNewId(ItemID newId) {
-		this.newId = newId;
+	public ItemID getInsertId() {
+		return getOperationID();
 	}
 
 	public T getValue() {
@@ -42,7 +37,7 @@ public class InsertOp<T> implements ChangingOperation {
 	public int hashCode() {
 		final int prime = 31;
 		int result = 1;
-		result = prime * result + ((newId == null) ? 0 : newId.hashCode());
+		result = prime * result + ((getInsertId() == null) ? 0 : getInsertId().hashCode());
 		result = prime * result + ((referenceId == null) ? 0 : referenceId.hashCode());
 		result = prime * result + ((value == null) ? 0 : value.hashCode());
 		return result;
@@ -58,10 +53,10 @@ public class InsertOp<T> implements ChangingOperation {
 			return false;
 		@SuppressWarnings("rawtypes")
 		InsertOp other = (InsertOp) obj;
-		if (newId == null) {
-			if (other.newId != null)
+		if (getInsertId() == null) {
+			if (other.getInsertId() != null)
 				return false;
-		} else if (!newId.equals(other.newId))
+		} else if (!getInsertId().equals(other.getInsertId()))
 			return false;
 		if (referenceId == null) {
 			if (other.referenceId != null)
@@ -78,6 +73,6 @@ public class InsertOp<T> implements ChangingOperation {
 
 	@Override
 	public String toString() {
-		return "InsertOp [referenceId=" + referenceId + ", newId=" + newId + ", value=" + value + "]";
+		return "InsertOp [referenceId=" + referenceId + ", insertId=" + getInsertId() + ", value=" + value + "]";
 	}
 }

@@ -3,12 +3,11 @@ package org.trvedata.crdt.orderedlist;
 import org.trvedata.crdt.ItemID;
 import org.trvedata.crdt.operation.ChangingOperation;
 
-public class DeleteOp implements ChangingOperation {
-	private ItemID deleteId;
+public class DeleteOp extends ChangingOperation {
 	private ItemID deleteTs;
 
 	public DeleteOp(ItemID deleteId, ItemID deleteTs) {
-		this.deleteId = deleteId;
+		super(deleteId);
 		this.deleteTs = deleteTs;
 	}
 
@@ -17,7 +16,7 @@ public class DeleteOp implements ChangingOperation {
 	}
 
 	public ItemID getDeleteId() {
-		return deleteId;
+		return getOperationID();
 	}
 
 	public ItemID getDeleteTs() {
@@ -28,7 +27,7 @@ public class DeleteOp implements ChangingOperation {
 	public int hashCode() {
 		final int prime = 31;
 		int result = 1;
-		result = prime * result + ((deleteId == null) ? 0 : deleteId.hashCode());
+		result = prime * result + ((getDeleteId() == null) ? 0 : getDeleteId().hashCode());
 		result = prime * result + ((deleteTs == null) ? 0 : deleteTs.hashCode());
 		return result;
 	}
@@ -42,10 +41,10 @@ public class DeleteOp implements ChangingOperation {
 		if (getClass() != obj.getClass())
 			return false;
 		DeleteOp other = (DeleteOp) obj;
-		if (deleteId == null) {
-			if (other.deleteId != null)
+		if (getDeleteId() == null) {
+			if (other.getDeleteId() != null)
 				return false;
-		} else if (!deleteId.equals(other.deleteId))
+		} else if (!getDeleteId().equals(other.getDeleteId()))
 			return false;
 		if (deleteTs == null) {
 			if (other.deleteTs != null)
@@ -57,6 +56,6 @@ public class DeleteOp implements ChangingOperation {
 
 	@Override
 	public String toString() {
-		return "DeleteOp [deleteId=" + deleteId + ", deleteTs=" + deleteTs + "]";
+		return "DeleteOp [deleteId=" + getDeleteId() + ", deleteTs=" + deleteTs + "]";
 	}
 }

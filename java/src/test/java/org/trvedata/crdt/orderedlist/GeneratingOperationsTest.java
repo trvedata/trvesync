@@ -40,7 +40,7 @@ public class GeneratingOperationsTest {
 		ArrayList<Long> logicalTs = new ArrayList<Long>();
 		ArrayList<Character> values = new ArrayList<Character>();
 		for (Operation op : ops) {
-			logicalTs.add(((InsertOp) op).getNewId().getLogicalTs());
+			logicalTs.add(((InsertOp) op).getInsertId().getLogicalTs());
 			values.add(((InsertOp<Character>) op).getValue());
 		}
 		assertEquals(logicalTs, Arrays.asList(1L, 2L, 3L));

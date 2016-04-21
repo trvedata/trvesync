@@ -144,7 +144,7 @@ public class OrderedList<T> extends CRDT implements Iterable<T> {
 		if (operation instanceof InsertOp) {
 			@SuppressWarnings("unchecked")
 			InsertOp<T> insertOp = (InsertOp<T>) operation;
-			this.insertAfterId(insertOp.getReferenceId(), insertOp.getNewId(), insertOp.getValue());
+			this.insertAfterId(insertOp.getReferenceId(), insertOp.getInsertId(), insertOp.getValue());
 		} else if (operation instanceof DeleteOp) {
 			DeleteOp deleteOp = (DeleteOp) operation;
 			Item<T> item = this.itemsById.get(deleteOp.getDeleteId());
