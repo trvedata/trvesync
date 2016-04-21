@@ -18,13 +18,15 @@ import org.trvedata.crdt.orderedlist.OrderedListPeer;
 
 public class GeneratingOperationsTest {
 	@Test
-	public void testDefaultEmpty() { // should be empty by default
+	public void testDefaultEmpty() { 
+		// should be empty by default
 		OrderedListPeer<Character> peer = new OrderedListPeer<Character>("peer1");
 		assertTrue(peer.makeMessage().getOperations().isEmpty());
 	}
 
 	@Test
-	public void testInsertOperation() { // should include details of an insert operation
+	public void testInsertOperation() { 
+		// should include details of an insert operation
 		OrderedListPeer<Character> peer = new OrderedListPeer<Character>("peer1");
 		peer.getOrderedList().insert(0, 'a');
 		assertEquals(new ArrayList<Operation>(peer.makeMessage().getOperations()),
@@ -32,8 +34,8 @@ public class GeneratingOperationsTest {
 	}
 
 	@Test
-	public void testAssignMonotonicallyIncreasingClockValues() { // should assign monotonically increasing clock values
-																	// to operations
+	public void testAssignMonotonicallyIncreasingClockValues() { 
+		// should assign monotonically increasing clock values to operations
 		OrderedListPeer<Character> peer = new OrderedListPeer<Character>("peer1");
 		peer.getOrderedList().insert(0, 'a').insert(1, 'b').insert(2, 'c');
 		Collection<Operation> ops = peer.makeMessage().getOperations();
@@ -48,7 +50,8 @@ public class GeneratingOperationsTest {
 	}
 
 	@Test
-	public void testReferencePriorInsertsInLaterOperations() { // should reference prior inserts in later operations
+	public void testReferencePriorInsertsInLaterOperations() { 
+		// should reference prior inserts in later operations
 		OrderedListPeer<Character> peer = new OrderedListPeer<Character>("peer1");
 		peer.getOrderedList().insert(0, 'a').insert(1, 'b').insert(2, 'c').remove(1);
 		List<Operation> ops = new ArrayList(peer.makeMessage().getOperations());
@@ -63,14 +66,16 @@ public class GeneratingOperationsTest {
 	}
 
 	@Test
-	public void testIncludeDetailsOfRemoveOperation() { // should include details of a remove operation
+	public void testIncludeDetailsOfRemoveOperation() { 
+		// should include details of a remove operation
 		OrderedListPeer<Character> peer = new OrderedListPeer<Character>("peer1");
 		peer.getOrderedList().insert(0, 'a').remove(0);
 		assertEquals(peer.makeMessage().getOperations().getLast(), new DeleteOp(new ItemID(1, new PeerID("peer1")), new ItemID(2, new PeerID("peer1"))));
 	}
 
 	@Test
-	public void testFlushOperationList() { // should flush the operation list
+	public void testFlushOperationList() { 
+		// should flush the operation list
 		OrderedListPeer<Character> peer = new OrderedListPeer<Character>("peer1");
 		peer.getOrderedList().insert(0, 'a').remove(0);
 		peer.makeMessage();
