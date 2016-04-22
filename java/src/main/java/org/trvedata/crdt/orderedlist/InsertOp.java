@@ -36,8 +36,7 @@ public class InsertOp<T> extends ChangingOperation {
 	@Override
 	public int hashCode() {
 		final int prime = 31;
-		int result = 1;
-		result = prime * result + ((getInsertId() == null) ? 0 : getInsertId().hashCode());
+		int result = super.hashCode();
 		result = prime * result + ((referenceId == null) ? 0 : referenceId.hashCode());
 		result = prime * result + ((value == null) ? 0 : value.hashCode());
 		return result;
@@ -47,17 +46,11 @@ public class InsertOp<T> extends ChangingOperation {
 	public boolean equals(Object obj) {
 		if (this == obj)
 			return true;
-		if (obj == null)
+		if (!super.equals(obj))
 			return false;
 		if (getClass() != obj.getClass())
 			return false;
-		@SuppressWarnings("rawtypes")
 		InsertOp other = (InsertOp) obj;
-		if (getInsertId() == null) {
-			if (other.getInsertId() != null)
-				return false;
-		} else if (!getInsertId().equals(other.getInsertId()))
-			return false;
 		if (referenceId == null) {
 			if (other.referenceId != null)
 				return false;

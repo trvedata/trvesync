@@ -4,7 +4,7 @@ package org.trvedata.crdt;
  * One entry in a vector clock. The peerId is the hex string representing a peer; the peerIndex is the number we have
  * locally assigned to that peer; and msgCount is the number of messages we have received from that peer.
  */
-public class PeerVClockEntry implements Comparable<PeerVClockEntry> {
+public class PeerVClockEntry {
 	private PeerID peerId;
 	private PeerIndex peerIndex;
 	private long msgCount;
@@ -12,7 +12,7 @@ public class PeerVClockEntry implements Comparable<PeerVClockEntry> {
 	public PeerVClockEntry(PeerID peerId, PeerIndex peerIndex, long msgCount) {
 		this.peerId = peerId;
 		this.peerIndex = peerIndex;
-		this.setMsgCount(msgCount);
+		this.msgCount = msgCount;
 	}
 
 	public PeerID getPeerId() {
@@ -38,11 +38,6 @@ public class PeerVClockEntry implements Comparable<PeerVClockEntry> {
 	@Override
 	public String toString() {
 		return "PeerVClockEntry [peerId=" + peerId + ", peerIndex=" + peerIndex + ", msgCount=" + msgCount + "]";
-	}
-
-	@Override
-	public int compareTo(PeerVClockEntry o) {
-		return this.peerIndex.idx < o.peerIndex.idx ? -1 : this.peerIndex == o.peerIndex ? 0 : 1;
 	}
 
 	@Override

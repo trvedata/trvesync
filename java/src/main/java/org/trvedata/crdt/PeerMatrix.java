@@ -1,27 +1,28 @@
 package org.trvedata.crdt;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 
-import org.trvedata.crdt.operation.ClockUpdate;
 import org.trvedata.crdt.operation.LocalClockUpdate;
 
 public class PeerMatrix {
 	
-	private static class PeerVClockList implements Iterable<PeerVClockEntry> {
-		List<PeerVClockEntry> vClocks;
+	private class PeerVClockList implements Iterable<PeerVClockEntry> {
+		HashMap<PeerIndex,PeerVClockEntry> vClocks = new HashMap<PeerIndex, PeerVClockEntry>();
 
-		public PeerVClockList(List<PeerVClockEntry> vClocks) {
-			this.vClocks = new ArrayList<PeerVClockEntry>(vClocks);
+		public PeerVClockList(PeerVClockEntry ownVClock) {
+			assert ownVClock.getPeerIndex().equals(PEER_INDEX_LOCAL);
+			vClocks.put(ownVClock.getPeerIndex(), ownVClock);
 		}
-
+		
 		public PeerVClockEntry getClockEntry(PeerIndex i) {
-			return i.idx < vClocks.size() ? vClocks.get(i.idx) : null;
+			return vClocks.get(i);
+		}
+		
+		public PeerVClockEntry getOwnPeerVClockEntry() {
+			return getClockEntry(PEER_INDEX_LOCAL);
 		}
 
 		public int size() {
@@ -29,26 +30,27 @@ public class PeerMatrix {
 		}
 
 		public boolean hasPeerId(PeerID peerId) {
-			for (PeerVClockEntry entry : this.vClocks)
+			for (PeerVClockEntry entry : vClocks.values())
 				if (entry.getPeerId().equals(peerId))
 					return true;
 			return false;
 		}
 
 		public PeerVClockEntry setClockEntry(PeerIndex subjectPeerIndex, PeerVClockEntry entry) {
-			while (this.vClocks.size() <= subjectPeerIndex.idx)
-				this.vClocks.add(null);
-			this.vClocks.set(subjectPeerIndex.idx, entry);
+			if (!subjectPeerIndex.equals(entry.getPeerIndex())) {
+				throw new AssertionError("subjectPeerIndex != entry.getPeerIndex(): " + subjectPeerIndex + " != " + entry.getPeerIndex());
+			}
+			this.vClocks.put(subjectPeerIndex, entry);
 			return entry;
 		}
 
 		@Override
 		public Iterator<PeerVClockEntry> iterator() {
-			return this.vClocks.iterator();
+			return this.vClocks.values().iterator();
 		}
 
 		public void add(PeerVClockEntry peerVClockEntry) {
-			this.vClocks.add(peerVClockEntry);
+			this.vClocks.put(peerVClockEntry.getPeerIndex(), peerVClockEntry);
 		}
 
 		@Override
@@ -58,43 +60,48 @@ public class PeerMatrix {
 	}
 	
 	private static final PeerIndex PEER_INDEX_LOCAL = new PeerIndex(0);
-	
-	private List<PeerVClockList> vectorClockMatrix;
-	private HashMap<PeerID, PeerIndex> indexByPeerId = new HashMap<PeerID, PeerIndex>();;
+
+//	vectorClockMatrix.get(peer1Index).get(peer2Index) records how many operations peer1 has seen from peer2.
+//	peer1Index is according to this peer's local index assignment (see indexByPeerId); peer2Index is according to
+//	peer1's index assignment. 
+	private final HashMap<PeerIndex,PeerVClockList> vectorClockMatrix = new HashMap<PeerIndex, PeerMatrix.PeerVClockList>();
+//	Key: peer ID, Value: the index that this peer has locally assigned to that peer ID. The indexes must be strictly sequential.
+	private final HashMap<PeerID, PeerIndex> indexByPeerId = new HashMap<PeerID, PeerIndex>();
+//	used to record any operations we see from other peers, so that we can broadcast vector clock diffs to others.
 	private LocalClockUpdate localClockUpdate;
+	private Map<PeerID,Long> nextTimestampByPeerID = new HashMap<PeerID, Long>(); 
+
 
 	public PeerMatrix(PeerID ownPeerId) {
-		// matrix.get(peer1Index).get(peer2Index) records how many operations peer1 has seen from peer2. peer1Index is
-		// according to this peer's local index assignment (see indexByPeerId); peer2Index is according to peer1's index
-		// assignment.
-		this.vectorClockMatrix = new ArrayList<PeerVClockList>();
-		this.vectorClockMatrix.add(new PeerVClockList(Arrays.asList(new PeerVClockEntry(ownPeerId, PEER_INDEX_LOCAL, 0))));
-		// Key: peer ID (as hex string), Value: the index that this peer has locally assigned to that peer ID. The
-		// indexes must be strictly sequential.
+		setPeerVClockList(PEER_INDEX_LOCAL, createNewPeerVClockListForPeer(ownPeerId));
 		this.indexByPeerId.put(ownPeerId, PEER_INDEX_LOCAL);
-		// used to record any operations we see from other peers, so that we can broadcast vector clock diffs to others.
 		this.localClockUpdate = new LocalClockUpdate();
+		nextTimestampByPeerID.put(ownPeerId, 0L);
+	}
+
+	private PeerVClockList createNewPeerVClockListForPeer(PeerID ownPeerId) {
+		return new PeerVClockList(new PeerVClockEntry(ownPeerId, PEER_INDEX_LOCAL, 0));
 	}
 
 	/**
 	 * Returns the peer ID (globally unique hex string) for the local device.
 	 */
 	public PeerID ownPeerId() {
-		return getPeerVClockList(PEER_INDEX_LOCAL).getClockEntry(PEER_INDEX_LOCAL).getPeerId();
+		return getOwnPeerVClockList().getClockEntry(PEER_INDEX_LOCAL).getPeerId();
+	}
+
+	private PeerVClockList getOwnPeerVClockList() {
+		return getPeerVClockList(PEER_INDEX_LOCAL);
 	}
 	
 	protected PeerVClockList getPeerVClockList(PeerIndex peerIndex) {
-		return this.vectorClockMatrix.get(peerIndex.idx);
+		return this.vectorClockMatrix.get(peerIndex);
 	}
 	
 	protected void setPeerVClockList(PeerIndex peerIndex, PeerVClockList peerVClockList) {
-		this.vectorClockMatrix.set(peerIndex.idx, peerVClockList);
+		this.vectorClockMatrix.put(peerIndex, peerVClockList);
 	}
 	
-	private void addPeerVClockList(PeerVClockList peerVClockList) {
-		this.vectorClockMatrix.add(peerVClockList);
-	}
-
 	/**
 	 * When we get a message from originPeerId, it may refer to another peer by an integer index remotePeerIndex. This
 	 * method translates remotePeerIndex (which is meaningful only in the context of messages from originPeerId) to the
@@ -112,20 +119,20 @@ public class PeerMatrix {
 	 * the matrix and assigned a new index.
 	 */
 	public PeerIndex peerIdToIndex(PeerID peerId) {
-		PeerIndex index = this.indexByPeerId.get(peerId);
-		if (index != null)
-			return index;
-		index = new PeerIndex(this.indexByPeerId.size());
+		PeerIndex peerIndex = this.indexByPeerId.get(peerId);
+		if (peerIndex != null)
+			return peerIndex;
+		peerIndex = new PeerIndex(this.indexByPeerId.size());
 		
-		assert index.idx == this.vectorClockMatrix.size();
-		assert index.idx == this.vectorClockMatrix.get(PEER_INDEX_LOCAL.idx).size();
-		assert !this.vectorClockMatrix.get(PEER_INDEX_LOCAL.idx).hasPeerId(peerId);
+		assert peerIndex.getIdx() == this.vectorClockMatrix.size();
+		assert peerIndex.getIdx() == getOwnPeerVClockList().size();
+		assert !getOwnPeerVClockList().hasPeerId(peerId);
 		
-		this.indexByPeerId.put(peerId, index);
-		getPeerVClockList(PEER_INDEX_LOCAL).add(new PeerVClockEntry(peerId, index, 0));
-		addPeerVClockList(new PeerVClockList(Arrays.asList(new PeerVClockEntry(peerId, PEER_INDEX_LOCAL, 0))));
-		this.localClockUpdate.addPeer(peerId, index);
-		return index;
+		this.indexByPeerId.put(peerId, peerIndex);
+		getOwnPeerVClockList().add(new PeerVClockEntry(peerId, peerIndex, 0));
+		setPeerVClockList(peerIndex, createNewPeerVClockListForPeer(peerId));
+		this.localClockUpdate.addPeer(peerId, peerIndex);
+		return peerIndex;
 	}
 
 	/*
@@ -140,7 +147,7 @@ public class PeerMatrix {
 			if (subjectPeerId != null && subjectPeerId != entry.getPeerId())
 				throw new RuntimeException("peerIndexMapping: Contradictory peer index assignment: " + subjectPeerId + " != " + entry.getPeerId());
 			return entry;
-		} else if (subjectPeerIndex.idx != vclocks.size()) {
+		} else if (subjectPeerIndex.getIdx() != vclocks.size()) {
 			throw new RuntimeException("peerIndexMapping: Non-consecutive peer index assignment: " + subjectPeerIndex + " != " + vclocks.size());
 		} else if (subjectPeerId == null) {
 			throw new RuntimeException("peerIndexMapping: New peer index assignment without ID");
@@ -149,12 +156,35 @@ public class PeerMatrix {
 		}
 	}
 
+	public void updateNextTimestamp(PeerID peerID, long nextTimestamp) {
+		if (nextTimestamp < 0)
+			throw new IllegalArgumentException("nextTimestamp < 0 for peer " + peerID + ": " + nextTimestamp);
+		Long currentNextTs = nextTimestampByPeerID.get(peerID);
+		if (currentNextTs != null) {
+			if (nextTimestamp < currentNextTs) {
+				throw new IllegalArgumentException("Non-monotonic logical timestamp: " + currentNextTs + " -> " + nextTimestamp + " for peer " + peerID);
+			}
+		}
+		nextTimestampByPeerID.put(peerID, nextTimestamp);
+	}
+	
+	public ItemID nextOperationID(PeerID peerID) {
+		long nextTs = getCurrentNextTimestamp(peerID);
+		
+		if (nextTs == Long.MAX_VALUE)
+			throw new IllegalStateException("nextTs == Long.MAX_VALUE for peer ID " + peerID);
+
+		nextTimestampByPeerID.put(peerID, nextTs + 1);
+		return new ItemID(nextTs, peerID);
+	}
+	
 	/*
 	 * Processes a clock update from a remote peer and applies it to the local state. The update indicates that
 	 * originPeerId has received various operations from other peers, and also documents which peer indexes originPeerId
 	 * has assigned to those peers.
 	 */
-	protected void applyClockUpdate(PeerID originPeerId, ClockUpdate update) {
+	protected void applyRemoteClockUpdate(PeerID originPeerId, RemoteClockUpdate update) {
+		updateNextTimestamp(originPeerId, update.getNextTimestamp());
 		for (PeerVClockEntry newEntry : update.entries()) {
 			PeerVClockEntry oldEntry = this.peerIndexMapping(originPeerId, newEntry.getPeerId(), newEntry.getPeerIndex());
 			if (oldEntry.getMsgCount() > newEntry.getMsgCount())
@@ -167,7 +197,7 @@ public class PeerMatrix {
 	 * Increments the message counter for the local peer, indicating that a message has been broadcast to other peers.
 	 */
 	protected long incrementMsgCount() {
-		return getPeerVClockList(PEER_INDEX_LOCAL).getClockEntry(PEER_INDEX_LOCAL).incrementMsgCount();
+		return getOwnPeerVClockList().getOwnPeerVClockEntry().incrementMsgCount();
 	}
 
 	/*
@@ -176,8 +206,8 @@ public class PeerMatrix {
 	 */
 	protected void processedIncomingMsg(PeerID originPeerId, long msgCounter) {
 		PeerIndex originIndex = this.peerIdToIndex(originPeerId);
-		PeerVClockEntry localEntry = getPeerVClockList(PEER_INDEX_LOCAL).getClockEntry(originIndex);
-		PeerVClockEntry remoteEntry = getPeerVClockList(originIndex).getClockEntry(PEER_INDEX_LOCAL);
+		PeerVClockEntry localEntry = getOwnPeerVClockList().getClockEntry(originIndex);
+		PeerVClockEntry remoteEntry = getPeerVClockList(originIndex).getOwnPeerVClockEntry();
 
 		// We normally expect the msgCount for a peer to be monotonically increasing. However, there's a possible
 		// scenario in which a peer sends some messages and then crashes before writing its state to stable storage, so
@@ -204,7 +234,7 @@ public class PeerMatrix {
 	 */
 	public boolean isCausallyReady(PeerID remotePeerId) {
 		Map<PeerID, Long> localVclock = new HashMap<PeerID, Long>();
-		for (PeerVClockEntry entry : getPeerVClockList(PEER_INDEX_LOCAL)) {
+		for (PeerVClockEntry entry : getOwnPeerVClockList()) {
 			localVclock.put(entry.getPeerId(), entry.getMsgCount());
 		}
 
@@ -239,5 +269,10 @@ public class PeerMatrix {
 	@Override
 	public String toString() {
 		return "PeerMatrix [matrix=" + vectorClockMatrix + ", indexByPeerId=" + indexByPeerId + ", localClockUpdate=" + localClockUpdate + "]";
+	}
+
+	public long getCurrentNextTimestamp(PeerID peerID) {
+		Long nextTs = nextTimestampByPeerID.get(peerID);
+		return nextTs == null ? 0 : nextTs;
 	}
 }

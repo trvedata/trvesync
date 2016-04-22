@@ -1,15 +1,19 @@
 package org.trvedata.crdt;
 
 public class PeerIndex {
-	int idx;
+	private final long idx;
 	
-	public PeerIndex(int idx) {
+	public PeerIndex(long idx) {
 		this.idx = idx;
+	}
+	
+	public long getIdx() {
+		return idx;
 	}
 
 	@Override
 	public int hashCode() {
-		return idx;
+		return Long.hashCode(idx);
 	}
 
 	@Override
@@ -18,5 +22,14 @@ public class PeerIndex {
 			return false;
 		PeerIndex other = (PeerIndex) obj;
 		return idx == other.idx;
+	}
+
+	@Override
+	public String toString() {
+		return "PeerIndex [idx=" + idx + "]";
+	}
+
+	public int compareTo(PeerIndex o) {
+		return Long.compare(idx, o.idx);
 	}
 }

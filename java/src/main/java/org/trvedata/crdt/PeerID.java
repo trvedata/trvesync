@@ -2,7 +2,7 @@ package org.trvedata.crdt;
 
 public class PeerID implements Comparable<PeerID> {
 	
-	String peerID;
+	final String peerID;
 
 	public PeerID(String peerID) {
 		if (peerID == null)
@@ -12,10 +12,6 @@ public class PeerID implements Comparable<PeerID> {
 
 	public String getPeerID() {
 		return peerID;
-	}
-
-	public void setPeerID(String peerID) {
-		this.peerID = peerID;
 	}
 
 	@Override

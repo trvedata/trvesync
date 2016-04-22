@@ -5,9 +5,11 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.trvedata.crdt.operation.ChangingOperation;
-import org.trvedata.crdt.operation.ClockUpdate;
 import org.trvedata.crdt.operation.LocalClockUpdate;
 import org.trvedata.crdt.operation.MessageHistory;
 import org.trvedata.crdt.operation.MessageProcessed;
@@ -16,7 +18,9 @@ import org.trvedata.crdt.operation.OperationList;
 import org.trvedata.crdt.orderedlist.OrderedList;
 
 public class Peer {
-	private final PeerID peerId;
+	private static final Logger log = LoggerFactory.getLogger(Peer.class);
+	
+	private final PeerID ownPeerID;
 	private final PeerMatrix peerMatrix;
 	private final CRDT crdt;
 	private final Map<PeerID, Deque<Operation>> recvBuf = new HashMap<PeerID, Deque<Operation>>();;
@@ -29,8 +33,8 @@ public class Peer {
 	}
 	
 	public Peer(PeerID peerId, CRDT crdt) {
-		this.peerId = peerId == null ? createRandomPeerID() : peerId;
-		this.peerMatrix = new PeerMatrix(this.peerId);
+		this.ownPeerID = peerId == null ? createRandomPeerID() : peerId;
+		this.peerMatrix = new PeerMatrix(this.ownPeerID);
 		this.crdt = crdt != null ? crdt : new OrderedList();
 		this.crdt.setPeer(this);
 	}
@@ -54,7 +58,7 @@ public class Peer {
 	}
 
 	public ItemID nextId() {
-		return new ItemID(++this.logicalTs, this.peerId);
+		return new ItemID(++this.logicalTs, this.ownPeerID);
 	}
 
 	public void sendOperation(Operation operation) {
@@ -65,7 +69,7 @@ public class Peer {
 	public Message makeMessage() {
 		this.sendClockUpdateIfNotEmpty();
 		final OperationList operationList = OperationList.create(sendBuf);
-		final Message message = new Message(peerId, peerMatrix.incrementMsgCount(), operationList);
+		final Message message = new Message(ownPeerID, peerMatrix.incrementMsgCount(), operationList);
 		this.sendBuf = new ArrayDeque<Operation>();
 		return message;
 	}
@@ -73,7 +77,8 @@ public class Peer {
 	protected void sendClockUpdateIfNotEmpty() {
 		final LocalClockUpdate localClockUpdate = this.peerMatrix.getLocalClockUpdate();
 		if (!localClockUpdate.isEmpty()) {
-			this.sendBuf.push(localClockUpdate);
+			this.sendBuf.push(new RemoteClockUpdate(
+					peerMatrix.getCurrentNextTimestamp(ownPeerID), localClockUpdate.entries()));
 			this.peerMatrix.resetClockUpdate();
 		}
 	}
@@ -90,39 +95,58 @@ public class Peer {
 			;
 	}
 
+	//Returns true if more peers may be casually ready
 	protected boolean applyOperationsIfReady() {
-		PeerID readyPeerId = null;
-		Deque<Operation> readyOps = null;
-		for (PeerID peerId : this.recvBuf.keySet()) {
-			if (this.peerMatrix.isCausallyReady(peerId) && !this.recvBuf.get(peerId).isEmpty()) {
-				readyPeerId = peerId;
-				readyOps = this.recvBuf.get(peerId);
-				break;
-			}
-		}
-		if (readyPeerId == null)
+		Map.Entry<PeerID, Deque<Operation>> casuallyReadyPeerIDWithOperations = findCasuallyReadyPeerWithOperations();
+		if (casuallyReadyPeerIDWithOperations == null)
 			return false;
-		while (!readyOps.isEmpty()) {
-			Operation operation = readyOps.pop();
-			if (GlobalConstants.DEBUG)
-				System.out.println("Peer " + peerId + ": Processing operation from " + readyPeerId + ": " + operation);
-			if (operation instanceof ClockUpdate) {
-				this.peerMatrix.applyClockUpdate(readyPeerId, (ClockUpdate) operation);
-				// Applying the clock update might make the following operations causally non-ready, so we stop
-				// processing operations from this peer and check again for causal readiness.
-				return true;
-			} else if (operation instanceof MessageProcessed) {
-				MessageProcessed messageProcessed = (MessageProcessed) operation;
-				this.peerMatrix.processedIncomingMsg(readyPeerId, messageProcessed.getMsgCounter());
-			} else {
-				ChangingOperation changingOp = (ChangingOperation) operation;
-				if (this.logicalTs < changingOp.logicalTs())
-					this.logicalTs = changingOp.logicalTs();
-				this.getCRDT().applyOperation(changingOp);
-			}
+		
+		applyOperations(casuallyReadyPeerIDWithOperations.getKey(), casuallyReadyPeerIDWithOperations.getValue());
+		return true;
+	}
+
+	private void applyOperations(PeerID readyPeerID, Deque<Operation> readyOperations) {
+		while (!readyOperations.isEmpty()) {
+			Operation operation = readyOperations.pop();
+			boolean needToRecheckReadyness = applyOperation(operation, readyPeerID);
+			if (needToRecheckReadyness)
+				break;
 		}
-		readyOps.clear();
-		return true; // Finished this peer, now another peer's operations might be causally ready
+	}
+
+	private Entry<PeerID, Deque<Operation>> findCasuallyReadyPeerWithOperations() {
+		for (Map.Entry<PeerID, Deque<Operation>> e : recvBuf.entrySet()) {
+			PeerID peerID = e.getKey();
+			Deque<Operation> operations = e.getValue();
+			if (peerMatrix.isCausallyReady(peerID) && !operations.isEmpty())
+				return e;
+		}
+		return null;
+	}
+
+	//returns true if after applying the operation, further operations for the same peer may not be casually ready
+	private boolean applyOperation(Operation operation, PeerID senderPeerID) {
+		log.debug("Peer {}: Processing operation from {}: {}", ownPeerID, senderPeerID, operation);
+		if (operation instanceof RemoteClockUpdate) {
+			this.peerMatrix.applyRemoteClockUpdate(senderPeerID, (RemoteClockUpdate) operation);
+			// Applying the clock update might make the following operations causally non-ready, so we stop
+			// processing operations from this peer and check again for causal readiness.
+			// TODO describe why this can happen
+			return true;
+		} else if (operation instanceof MessageProcessed) {
+			MessageProcessed messageProcessed = (MessageProcessed) operation;
+			this.peerMatrix.processedIncomingMsg(senderPeerID, messageProcessed.getMsgCounter());
+		} else if (operation instanceof ChangingOperation) {
+			ChangingOperation changingOp = (ChangingOperation) operation;
+			if (changingOp.getOperationID() == null)
+				changingOp.setOperationID(peerMatrix.nextOperationID(senderPeerID));
+			if (this.logicalTs < changingOp.logicalTs())
+				this.logicalTs = changingOp.logicalTs();
+			this.getCRDT().applyOperation(changingOp);
+		} else {
+			throw new UnsupportedOperationException("Unsupported remote operation type: " + operation.getClass().getName());
+		}
+		return false;
 	}
 
 	public CRDT getCRDT() {
@@ -134,12 +158,12 @@ public class Peer {
 	}
 
 	public PeerID getPeerId() {
-		return peerId;
+		return ownPeerID;
 	}
 
 	@Override
 	public String toString() {
-		return "Peer [peerId=" + peerId + ", peerMatrix=" + peerMatrix + ", orderedList=" + crdt + ", logicalTs=" + logicalTs + ", sendBuf="
+		return "Peer [peerId=" + ownPeerID + ", peerMatrix=" + peerMatrix + ", orderedList=" + crdt + ", logicalTs=" + logicalTs + ", sendBuf="
 				+ sendBuf + ", recvBuf=" + recvBuf + "]";
 	}
 }

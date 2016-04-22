@@ -10,7 +10,6 @@ import java.util.Set;
 import org.trvedata.crdt.CRDT;
 import org.trvedata.crdt.CRDTEventListener;
 import org.trvedata.crdt.ItemID;
-import org.trvedata.crdt.Peer;
 import org.trvedata.crdt.operation.ChangingOperation;
 import org.trvedata.crdt.operation.Operation;
 

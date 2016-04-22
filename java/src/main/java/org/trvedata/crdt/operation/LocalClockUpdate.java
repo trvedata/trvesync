@@ -2,6 +2,7 @@ package org.trvedata.crdt.operation;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 
@@ -15,10 +16,9 @@ import org.trvedata.crdt.PeerVClockEntry;
  * received from other peers). This is used to track the causal dependencies between operations.
  */
 public class LocalClockUpdate implements ClockUpdate {
-	private HashMap<PeerID, PeerVClockEntry> updateByPeerId;
+	private HashMap<PeerID, PeerVClockEntry> updateByPeerId = new HashMap<PeerID, PeerVClockEntry>();
 
 	public LocalClockUpdate() {
-		this.updateByPeerId = new HashMap<PeerID, PeerVClockEntry>(); // key is a peer ID (hex string)
 	}
 
 	public void addPeer(PeerID peerId, PeerIndex peerIndex) {
@@ -38,7 +38,12 @@ public class LocalClockUpdate implements ClockUpdate {
 	@Override
 	public List<PeerVClockEntry> entries() {
 		List<PeerVClockEntry> res = new ArrayList<PeerVClockEntry>(this.updateByPeerId.values());
-		Collections.sort(res);
+		Collections.sort(res, new Comparator<PeerVClockEntry>() {
+			@Override
+			public int compare(PeerVClockEntry o1, PeerVClockEntry o2) {
+				return o1.getPeerIndex().compareTo(o2.getPeerIndex());
+			}
+		});
 		return res;
 	}
 
