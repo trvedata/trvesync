@@ -51,62 +51,93 @@ module CRDT
       @canvas_size = [columns, lines]
     end
 
-    def render(screen)
-      resize(screen.columns, screen.lines) if @last_key == :resize
+    class Paragraph < Struct.new(:lines, :item_ids, :cursor, :ends_with_newline, :next_para_id)
+      def num_lines
+        lines.size
+      end
+    end
 
-      @lines = ['']
-      @item_ids = [[]]
-      @cursor = [0, 0]
+    def render_paragraph(start_id)
+      lines = ['']
+      item_ids = [[]]
+      cursor = nil
       word_boundary = 0
+      newline_found = false
 
-      @peer.ordered_list.each_item do |item|
+      @peer.ordered_list.each_item(start_id, :forwards) do |item|
         if @peer.cursor_id == item.insert_id
-          @cursor = [@item_ids.last.size, @item_ids.size - 1]
+          cursor = [item_ids.last.size, item_ids.size - 1]
         end
 
         if item.delete_ts.nil?
-          if item.value == "\n"
-            @lines << ''
-            @item_ids.last << item.insert_id
-            @item_ids << []
-            word_boundary = 0
+          if newline_found
+            return Paragraph.new(lines, item_ids, cursor, newline_found, item.insert_id)
+          elsif item.value == "\n"
+            item_ids.last << item.insert_id
+            newline_found = true
           else
-            @lines.last << item.value
-            @item_ids.last << item.insert_id
-            word_boundary = @lines.last.size if [" ", "\t", "-"].include? item.value
+            lines.last << item.value
+            item_ids.last << item.insert_id
+            word_boundary = lines.last.size if [" ", "\t", "-"].include? item.value
 
-            if @lines.last.size != @item_ids.last.size
+            if lines.last.size != item_ids.last.size
               raise "Document contains item that is not a single character: #{item.value.inspect}"
             end
 
-            if @lines.last.size >= @canvas_size[0]
-              if word_boundary == 0 || word_boundary == @lines.last.size
-                @lines << ''
-                @item_ids << []
+            if lines.last.size >= @canvas_size[0]
+              if word_boundary == 0 || word_boundary == lines.last.size
+                lines << ''
+                item_ids << []
               else
-                word_len = @lines.last.size - word_boundary
-                @lines    << @lines.   last.slice!(word_boundary, word_len) || ''
-                @item_ids << @item_ids.last.slice!(word_boundary, word_len) || []
+                word_len = lines.last.size - word_boundary
+                lines    << lines.   last.slice!(word_boundary, word_len) || ''
+                item_ids << item_ids.last.slice!(word_boundary, word_len) || []
               end
               word_boundary = 0
 
-              if @item_ids.last.include? @peer.cursor_id
-                @cursor = [@item_ids.last.index(@peer.cursor_id), @item_ids.size - 1]
+              if item_ids.last.include? @peer.cursor_id
+                cursor = [item_ids.last.index(@peer.cursor_id), item_ids.size - 1]
               end
             end
           end
         end
       end
 
-      @item_ids.last << nil # insertion point for appending at the end
-      @cursor = [@item_ids.last.size - 1, @item_ids.size - 1] if @peer.cursor_id.nil?
+      item_ids.last << nil unless newline_found # insertion point for appending at the end
+      Paragraph.new(lines, item_ids, cursor, newline_found, nil)
+    end
 
-      @scroll_lines = [@scroll_lines, @cursor[1]].min
-      if @cursor[1] - @scroll_lines >= @canvas_size[1] - 1
-        @scroll_lines = @cursor[1] - (@canvas_size[1] - 1) + 1
+    def render(screen)
+      resize(screen.columns, screen.lines) if @last_key == :resize
+
+      @paragraphs = []
+      @cursor = nil
+      start_id = @render_start_id
+      num_lines = 0
+
+      loop do
+        para = render_paragraph(start_id)
+        @paragraphs << para
+        @cursor = [para.cursor[0], para.cursor[1] + num_lines] if para.cursor
+        num_lines += para.num_lines
+        start_id = para.next_para_id
+        break if start_id.nil?
       end
 
-      viewport = @lines.slice(@scroll_lines, @canvas_size[1] - 1)
+      if @paragraphs.last.ends_with_newline
+        @paragraphs << Paragraph.new([''], [[nil]], nil, false, nil)
+        num_lines += 1
+      end
+      @cursor ||= [@paragraphs.last.item_ids.last.size - 1, num_lines - 1]
+
+      if @scroll_lines > @cursor[1]
+        @scroll_lines = @cursor[1]
+      end
+      if @scroll_lines <= @cursor[1] - @canvas_size[1] + 1
+        @scroll_lines = @cursor[1] - @canvas_size[1] + 2
+      end
+
+      viewport = @paragraphs.flat_map{|para| para.lines }.slice(@scroll_lines, @canvas_size[1] - 1)
       viewport << '' while viewport.size < @canvas_size[1] - 1
       viewport << "Channel: #{@peer.channel_id}"[0...@canvas_size[0]]
       screen.draw(viewport.join("\n"), [], [@cursor[1] - @scroll_lines, @cursor[0]])
@@ -159,18 +190,18 @@ module CRDT
       end
 
       @cursor_x = @cursor[0]
-      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+      @peer.cursor_id = current_line[@cursor[0]]
     end
 
     def move_cursor_right
       if @cursor[0] < end_of_line
         @cursor = [@cursor[0] + 1, @cursor[1]]
-      elsif @cursor[1] < @item_ids.size - 1
+      elsif @cursor[1] < num_lines_rendered - 1
         @cursor = [0, @cursor[1] + 1]
       end
 
       @cursor_x = @cursor[0]
-      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+      @peer.cursor_id = current_line[@cursor[0]]
     end
 
     def move_cursor_up
@@ -181,18 +212,18 @@ module CRDT
         @cursor[0] = @cursor_x = 0
       end
 
-      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+      @peer.cursor_id = current_line[@cursor[0]]
     end
 
     def move_cursor_down
-      if @cursor[1] < @item_ids.size - 1
+      if @cursor[1] < num_lines_rendered - 1
         @cursor[1] += 1
         @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
       else
         @cursor[0] = @cursor_x = end_of_line
       end
 
-      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+      @peer.cursor_id = current_line[@cursor[0]]
     end
 
     def move_cursor_page_up
@@ -248,17 +279,31 @@ module CRDT
 
     def move_cursor_line_begin
       @cursor[0] = @cursor_x = 0
-      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+      @peer.cursor_id = current_line[@cursor[0]]
     end
 
     def move_cursor_line_end
       @cursor[0] = end_of_line
       @cursor_x = @canvas_size[0]
-      @peer.cursor_id = @item_ids[@cursor[1]][@cursor[0]]
+      @peer.cursor_id = current_line[@cursor[0]]
+    end
+
+    def num_lines_rendered
+      @paragraphs.inject(0) {|num_lines, para| num_lines + para.num_lines }
     end
 
     def end_of_line
-      @item_ids[@cursor[1]].size - 1
+      current_line.size - 1
+    end
+
+    def current_line
+      line_no = @cursor[1]
+      para_no = 0
+      while line_no >= @paragraphs[para_no].num_lines
+        line_no -= @paragraphs[para_no].num_lines
+        para_no += 1
+      end
+      @paragraphs[para_no].item_ids[line_no]
     end
 
     # Insert a character at the current cursor position

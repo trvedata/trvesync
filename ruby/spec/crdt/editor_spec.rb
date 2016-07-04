@@ -78,6 +78,11 @@ RSpec.describe CRDT::Editor do
       expect(@screen).to display "                    \n          *\n\n\n"
     end
 
+    it 'should move the cursor down on newlines' do
+      keys "\n"
+      expect(@screen).to display "\n*\n\n\n"
+    end
+
     it 'should break on newlines' do
       keys "First\nand second line (the second wraps)\nNew line"
       expect(@screen).to display "First\nand second line \n(the second wraps)\nNew line*\n"
