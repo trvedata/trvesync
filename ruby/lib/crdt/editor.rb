@@ -126,14 +126,10 @@ module CRDT
         @paragraphs << Paragraph.new([''], [[nil]], nil, false, nil, nil)
         num_lines += 1
       end
-      @cursor ||= [@paragraphs.last.item_ids.last.size - 1, num_lines - 1]
 
-      if @scroll_lines > @cursor[1]
-        @scroll_lines = @cursor[1]
-      end
-      if @scroll_lines <= @cursor[1] - @canvas_size[1] + 1
-        @scroll_lines = @cursor[1] - @canvas_size[1] + 2
-      end
+      @cursor ||= [@paragraphs.last.item_ids.last.size - 1, num_lines - 1]
+      @scroll_lines = [@scroll_lines, @cursor[1]].min
+      @scroll_lines = [@scroll_lines, @cursor[1] - @canvas_size[1] + 2].max
 
       shift_paragraph while @scroll_lines >= @paragraphs.first.num_lines
 
@@ -196,12 +192,14 @@ module CRDT
       when :right                    then move_cursor_right
       when :up                       then move_cursor_up
       when :down                     then move_cursor_down
-      when :page_up                  then move_cursor_page_up
-      when :page_down                then move_cursor_page_down
+      when :"Ctrl+b", :page_up       then move_cursor_page_up(:full)
+      when :"Ctrl+f", :page_down     then move_cursor_page_down(:full)
+      when :"Ctrl+u"                 then move_cursor_page_up(:half)
+      when :"Ctrl+d"                 then move_cursor_page_down(:half)
       when :"Ctrl+left",  :"Alt+b"   then move_cursor_word_left
       when :"Ctrl+right", :"Alt+f"   then move_cursor_word_right
-      when :home, :"Ctrl+a"          then move_cursor_line_begin
-      when :end,  :"Ctrl+e"          then move_cursor_line_end
+      when :"Ctrl+a", :home          then move_cursor_line_begin
+      when :"Ctrl+e", :end           then move_cursor_line_end
 
       # editing text
       when :enter     then modified = true; insert("\n")
@@ -243,7 +241,7 @@ module CRDT
       @peer.cursor_id = current_line[@cursor[0]] if set_cursor_id
     end
 
-    def move_cursor_up(set_cursor_id=true)
+    def move_cursor_up
       if @cursor[1] > 0 || unshift_paragraph
         @cursor[1] -= 1
         @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
@@ -251,10 +249,10 @@ module CRDT
         @cursor[0] = @cursor_x = 0
       end
 
-      @peer.cursor_id = current_line[@cursor[0]] if set_cursor_id
+      @peer.cursor_id = current_line[@cursor[0]]
     end
 
-    def move_cursor_down(set_cursor_id=true)
+    def move_cursor_down
       if @cursor[1] < num_lines_rendered - 1 || push_paragraph
         @cursor[1] += 1
         @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
@@ -262,15 +260,41 @@ module CRDT
         @cursor[0] = @cursor_x = end_of_line
       end
 
-      @peer.cursor_id = current_line[@cursor[0]] if set_cursor_id
+      @peer.cursor_id = current_line[@cursor[0]]
     end
 
-    def move_cursor_page_up
-      # TODO
+    def move_cursor_page_up(how_much=:full)
+      target_scroll = (how_much == :half ? (@canvas_size[1] - 1) / 2 : @canvas_size[1] - 2)
+
+      loop do
+        scroll_by = [target_scroll, @scroll_lines].min
+        @scroll_lines -= scroll_by
+        target_scroll -= scroll_by
+        break if target_scroll == 0 || !unshift_paragraph
+      end
+
+      if @cursor[1] > @scroll_lines + @canvas_size[1] - 2
+        @cursor[1] = @scroll_lines + @canvas_size[1] - 2
+        @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
+        @peer.cursor_id = current_line[@cursor[0]]
+      end
     end
 
-    def move_cursor_page_down
-      # TODO
+    def move_cursor_page_down(how_much=:full)
+      target_scroll = @scroll_lines + (how_much == :half ? (@canvas_size[1] - 1) / 2 : @canvas_size[1] - 2)
+      available_lines = [num_lines_rendered - @scroll_lines - (@canvas_size[1] - 1), 0].max
+
+      loop do
+        @scroll_lines += [target_scroll - @scroll_lines, available_lines].min
+        break if @scroll_lines == target_scroll || !push_paragraph
+        available_lines = @paragraphs.last.num_lines
+      end
+
+      if @cursor[1] < @scroll_lines
+        @cursor[1] = @scroll_lines
+        @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
+        @peer.cursor_id = current_line[@cursor[0]]
+      end
     end
 
     def move_cursor_word_left

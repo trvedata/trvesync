@@ -199,6 +199,43 @@ RSpec.describe CRDT::Editor do
       keys [:down] * 10
       expect(@screen).to display "\nsix\nseven\neight*\n"
     end
+
+    it 'should scroll through long paragraphs' do
+      keys 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Maecenas a pretium felis. Pellentesque eget ex odio. Ut mollis et tortor ut vestibulum.'
+      expect(@screen).to display "felis. Pellentesque \neget ex odio. Ut \nmollis et tortor ut \nvestibulum.*\n"
+      keys [:up] * 5
+      expect(@screen).to display "adipiscing *elit. \nMaecenas a pretium \nfelis. Pellentesque \neget ex odio. Ut \n"
+      keys [:down] * 5
+      expect(@screen).to display "felis. Pellentesque \neget ex odio. Ut \nmollis et tortor ut \nvestibulum.*\n"
+    end
+
+    it 'should support page-up and page-down' do
+      keys (1..30).map{|n| "line #{n}" }.join("\n")
+      expect(@screen).to display "line 27\nline 28\nline 29\nline 30*\n"
+      keys :page_up
+      expect(@screen).to display "line 24\nline 25\nline 26\nline 27*\n"
+      keys [:page_up] * 3
+      expect(@screen).to display "line 15\nline 16\nline 17\nline 18*\n"
+      keys [:page_up] * 10
+      expect(@screen).to display "line 1\nline 2\nline 3\nline 4*\n"
+      keys :page_down
+      expect(@screen).to display "line 4*\nline 5\nline 6\nline 7\n"
+      keys [:page_down] * 10
+      expect(@screen).to display "line 27*\nline 28\nline 29\nline 30\n"
+    end
+
+    it 'should support scrolling by half-page' do
+      keys (1..30).map{|n| "line #{n}" }.join("\n")
+      expect(@screen).to display "line 27\nline 28\nline 29\nline 30*\n"
+      keys :"Ctrl+u"
+      expect(@screen).to display "line 25\nline 26\nline 27\nline 28*\n"
+      keys :"Ctrl+u"
+      expect(@screen).to display "line 23\nline 24\nline 25\nline 26*\n"
+      keys :"Ctrl+d"
+      expect(@screen).to display "line 25\nline 26*\nline 27\nline 28\n"
+      keys :"Ctrl+d"
+      expect(@screen).to display "line 27*\nline 28\nline 29\nline 30\n"
+    end
   end
 
   context 'editing' do
