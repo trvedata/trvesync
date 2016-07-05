@@ -44,7 +44,7 @@ module CRDT
 
     def each_item(start=nil, direction=:forwards, &block)
       item = if start
-               @items_by_id[start]
+               direction == :forwards ? @items_by_id[start] : @items_by_id[start].previous
              else
                direction == :forwards ? @head : @tail
              end

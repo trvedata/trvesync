@@ -51,7 +51,7 @@ module CRDT
       @canvas_size = [columns, lines]
     end
 
-    class Paragraph < Struct.new(:lines, :item_ids, :cursor, :ends_with_newline, :next_para_id)
+    class Paragraph < Struct.new(:lines, :item_ids, :cursor, :ends_with_newline, :start_id, :next_para_id)
       def num_lines
         lines.size
       end
@@ -65,14 +65,12 @@ module CRDT
       newline_found = false
 
       @peer.ordered_list.each_item(start_id, :forwards) do |item|
-        if @peer.cursor_id == item.insert_id
-          cursor = [item_ids.last.size, item_ids.size - 1]
-        end
+        start_id ||= item.insert_id
+        return Paragraph.new(lines, item_ids, cursor, newline_found, start_id, item.insert_id) if newline_found
+        cursor = [item_ids.last.size, item_ids.size - 1] if @peer.cursor_id == item.insert_id
 
         if item.delete_ts.nil?
-          if newline_found
-            return Paragraph.new(lines, item_ids, cursor, newline_found, item.insert_id)
-          elsif item.value == "\n"
+          if item.value == "\n"
             item_ids.last << item.insert_id
             newline_found = true
           else
@@ -95,7 +93,7 @@ module CRDT
               end
               word_boundary = 0
 
-              if item_ids.last.include? @peer.cursor_id
+              if cursor && item_ids.last.include?(@peer.cursor_id)
                 cursor = [item_ids.last.index(@peer.cursor_id), item_ids.size - 1]
               end
             end
@@ -104,15 +102,15 @@ module CRDT
       end
 
       item_ids.last << nil unless newline_found # insertion point for appending at the end
-      Paragraph.new(lines, item_ids, cursor, newline_found, nil)
+      Paragraph.new(lines, item_ids, cursor, newline_found, start_id, nil)
     end
 
     def render(screen)
       resize(screen.columns, screen.lines) if @last_key == :resize
 
+      start_id = @paragraphs && @paragraphs.first && @paragraphs.first.start_id
       @paragraphs = []
       @cursor = nil
-      start_id = @render_start_id
       num_lines = 0
 
       loop do
@@ -121,11 +119,11 @@ module CRDT
         @cursor = [para.cursor[0], para.cursor[1] + num_lines] if para.cursor
         num_lines += para.num_lines
         start_id = para.next_para_id
-        break if start_id.nil?
+        break if start_id.nil? || (@cursor && num_lines - @scroll_lines >= @canvas_size[1] - 1)
       end
 
-      if @paragraphs.last.ends_with_newline
-        @paragraphs << Paragraph.new([''], [[nil]], nil, false, nil)
+      if start_id.nil? && @paragraphs.last.ends_with_newline
+        @paragraphs << Paragraph.new([''], [[nil]], nil, false, nil, nil)
         num_lines += 1
       end
       @cursor ||= [@paragraphs.last.item_ids.last.size - 1, num_lines - 1]
@@ -137,11 +135,52 @@ module CRDT
         @scroll_lines = @cursor[1] - @canvas_size[1] + 2
       end
 
+      shift_paragraph while @scroll_lines >= @paragraphs.first.num_lines
+
       viewport = @paragraphs.flat_map{|para| para.lines }.slice(@scroll_lines, @canvas_size[1] - 1)
       viewport << '' while viewport.size < @canvas_size[1] - 1
       viewport << "Channel: #{@peer.channel_id}"[0...@canvas_size[0]]
       screen.draw(viewport.join("\n"), [], [@cursor[1] - @scroll_lines, @cursor[0]])
       screen.debug_key(@last_key) if @last_key && @options[:debug_keys]
+    end
+
+    # Drop the first paragraph from the range of paragraphs to be rendered (because we scrolled down)
+    def shift_paragraph
+      @scroll_lines -= @paragraphs.first.num_lines
+      @cursor[1] -= @paragraphs.first.num_lines
+      @paragraphs.shift
+    end
+
+    # Add a preceding paragraph to the range of paragraphs to be rendered (because we scrolled up).
+    # Returns true if a paragraph was added, and false if we're at the beginning of the document.
+    def unshift_paragraph
+      last_id = nil
+      newlines = 0
+      @peer.ordered_list.each_item(@paragraphs.first.start_id, :backwards) do |item|
+        newlines += 1 if item.delete_ts.nil? && item.value == "\n"
+        break if newlines == 2
+        last_id = item.insert_id
+      end
+      return false if newlines == 0
+
+      para = render_paragraph(last_id)
+      @scroll_lines += para.num_lines
+      @cursor[1] += para.num_lines
+      @paragraphs.unshift(para)
+      true
+    end
+
+    # Adds a paragraph to the end of the range of paragraphs to be rendered (because we scrolled
+    # down). Returns true if a paragraph was added, and false if we're at the end of the document.
+    def push_paragraph
+      return false if @paragraphs.last.next_para_id.nil?
+      para = render_paragraph(@paragraphs.last.next_para_id)
+      if para.item_ids == [[nil]]
+        false
+      else
+        @paragraphs << para
+        true
+      end
     end
 
     def key_pressed(key, screen)
@@ -181,49 +220,49 @@ module CRDT
 
     private
 
-    def move_cursor_left
+    def move_cursor_left(set_cursor_id=true)
       if @cursor[0] > 0
         @cursor = [@cursor[0] - 1, @cursor[1]]
-      elsif @cursor[1] > 0
+      elsif @cursor[1] > 0 || unshift_paragraph
         @cursor[1] -= 1
         @cursor[0] = end_of_line
       end
 
       @cursor_x = @cursor[0]
-      @peer.cursor_id = current_line[@cursor[0]]
+      @peer.cursor_id = current_line[@cursor[0]] if set_cursor_id
     end
 
-    def move_cursor_right
+    def move_cursor_right(set_cursor_id=true)
       if @cursor[0] < end_of_line
         @cursor = [@cursor[0] + 1, @cursor[1]]
-      elsif @cursor[1] < num_lines_rendered - 1
+      elsif @cursor[1] < num_lines_rendered - 1 || push_paragraph
         @cursor = [0, @cursor[1] + 1]
       end
 
       @cursor_x = @cursor[0]
-      @peer.cursor_id = current_line[@cursor[0]]
+      @peer.cursor_id = current_line[@cursor[0]] if set_cursor_id
     end
 
-    def move_cursor_up
-      if @cursor[1] > 0
+    def move_cursor_up(set_cursor_id=true)
+      if @cursor[1] > 0 || unshift_paragraph
         @cursor[1] -= 1
         @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
       else
         @cursor[0] = @cursor_x = 0
       end
 
-      @peer.cursor_id = current_line[@cursor[0]]
+      @peer.cursor_id = current_line[@cursor[0]] if set_cursor_id
     end
 
-    def move_cursor_down
-      if @cursor[1] < num_lines_rendered - 1
+    def move_cursor_down(set_cursor_id=true)
+      if @cursor[1] < num_lines_rendered - 1 || push_paragraph
         @cursor[1] += 1
         @cursor[0] = [[@cursor[0], @cursor_x || 0].max, end_of_line].min
       else
         @cursor[0] = @cursor_x = end_of_line
       end
 
-      @peer.cursor_id = current_line[@cursor[0]]
+      @peer.cursor_id = current_line[@cursor[0]] if set_cursor_id
     end
 
     def move_cursor_page_up
@@ -237,14 +276,11 @@ module CRDT
     def move_cursor_word_left
       seen_word_char = false
       last_item_id = @peer.cursor_id
-      is_first_item = true
 
       @peer.ordered_list.each_item(@peer.cursor_id, :backwards) do |item|
         next if item.delete_ts
-        if is_first_item
-          is_first_item = false
-          next
-        end
+        move_cursor_left(false)
+        raise 'ID mismatch' if item.insert_id != current_line[@cursor[0]]
 
         if item.value =~ /[[:word:]]/
           seen_word_char = true
@@ -265,6 +301,8 @@ module CRDT
 
       @peer.ordered_list.each_item(@peer.cursor_id, :forwards) do |item|
         next if item.delete_ts
+        raise 'ID mismatch' if item.insert_id != current_line[@cursor[0]]
+        move_cursor_right(false)
 
         if item.value =~ /[[:word:]]/
           seen_word_char = true

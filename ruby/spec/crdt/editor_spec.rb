@@ -188,6 +188,17 @@ RSpec.describe CRDT::Editor do
       keys [:down] * 4
       expect(@screen).to display "two\nthree\nfour\nfive*\n"
     end
+
+    it 'should scroll over empty lines' do
+      keys "one\ntwo\n\n\n\nsix\nseven\neight"
+      expect(@screen).to display "\nsix\nseven\neight*\n"
+      keys [:up] * 5
+      expect(@screen).to display "*\n\n\nsix\n"
+      keys [:up] * 3
+      expect(@screen).to display "*one\ntwo\n\n\n"
+      keys [:down] * 10
+      expect(@screen).to display "\nsix\nseven\neight*\n"
+    end
   end
 
   context 'editing' do
