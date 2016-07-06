@@ -11,7 +11,10 @@ GEM
     faye-websocket (0.10.2)
       eventmachine (>= 0.12.0)
       websocket-driver (>= 0.5.1)
+    ffi (1.9.12)
     multi_json (1.11.2)
+    rbnacl (3.4.0)
+      ffi
     rspec (3.3.0)
       rspec-core (~> 3.3.0)
       rspec-expectations (~> 3.3.0)
@@ -39,5 +42,6 @@ DEPENDENCIES
   avro
   dispel
   faye-websocket
+  rbnacl
   rspec
   rspec-eventmachine

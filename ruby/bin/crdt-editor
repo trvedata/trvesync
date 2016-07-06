@@ -19,6 +19,9 @@ parser = OptionParser.new do |opts|
   opts.on('-j', '--join channelID', 'Collaborate on an existing document', String) do |channel_id|
     options[:channel_id] = channel_id
   end
+  opts.on('-k', '--secret-key key', 'Encrypt messages with symmetric key', String) do |secret_key|
+    options[:secret_key] = secret_key
+  end
   opts.on('--debug-keys', 'Show keys that are pressed') { options[:debug_keys] = true }
   opts.on('-h', '--help', 'Show usage information')     { puts opts; exit(1) }
 end
@@ -48,6 +51,9 @@ File.open('/tmp/trvesync.log', 'a') do |logfile|
       raise "Invalid --join option: file #{options[:crdt_filename]} is for channel #{peer.channel_id}, but --join option specifies channel #{options[:channel_id]}"
     end
   else
+    if options[:channel_id] && !options[:secret_key]
+      raise 'When specifying --join for a new file, --secret-key is also required'
+    end
     peer = CRDT::Peer.new(nil, options)
   end
 

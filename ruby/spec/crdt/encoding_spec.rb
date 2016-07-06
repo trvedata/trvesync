@@ -10,7 +10,9 @@ RSpec.describe CRDT::Encoding do
 
     def initialize(num_peers)
       peer0 = CRDT::Peer.new
-      @peers = [peer0] + (1...num_peers).map {|i| CRDT::Peer.new(nil, channel_id: peer0.channel_id) }
+      @peers = [peer0] + (1...num_peers).map do |i|
+        CRDT::Peer.new(nil, channel_id: peer0.channel_id, secret_key: peer0.secret_key)
+      end
       @offset = 0
     end
 

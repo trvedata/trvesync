@@ -63,6 +63,7 @@ module CRDT
       {
         'channelID'       => hex_to_bin(channel_id),
         'channelOffset'   => channel_offset,
+        'secretKey'       => secret_key && hex_to_bin(secret_key),
         'defaultSchemaID' => encode_item_id(default_schema_id),
         'cursorsItemID'   => encode_item_id(cursors_item_id),
         'charactersItemID'=> encode_item_id(characters_item_id),
@@ -84,6 +85,7 @@ module CRDT
       decode_ordered_list(state['data']['characters'])
       self.channel_id     = bin_to_hex(state['channelID'])
       self.channel_offset = state['channelOffset']
+      self.secret_key     = state['secretKey'] && bin_to_hex(state['secretKey'])
       self.default_schema_id  = decode_item_id(peer_id, state['defaultSchemaID'])
       self.cursors_item_id    = decode_item_id(peer_id, state['cursorsItemID'])
       self.characters_item_id = decode_item_id(peer_id, state['charactersItemID'])
@@ -160,7 +162,7 @@ module CRDT
     #       # Server-assigned offset of the message (-1 if message is not yet confirmed by server)
     #       'offset'          => 1234,
     #
-    #       # Binary string of encoded message contents (output of encode_message_payload)
+    #       # Binary string of encoded, encrypted message contents (output of encode_message_payload)
     #       'payload'         => '...'
     #      }, ...
     #     ]
@@ -339,7 +341,7 @@ module CRDT
     #       # Per-peerID, per-channel message sequence number (must increment by 1 for every message)
     #       'senderSeqNo' => 123,
     #
-    #       # Avro-encoded message payload as a byte string (not interpreted by the server)
+    #       # Avro-encoded, encrypted message payload as a byte string (not interpreted by the server)
     #       'payload' => '...'
     #     }
     def encode_message_request(message)
@@ -387,7 +389,8 @@ module CRDT
     # Decodes an incoming message from another peer, given as a decoded ReceiveMessage record (see
     # documentation for #receive_message). Returns a Peer::Message object.
     def decode_message_payload(sender_id, message)
-      decoder = Avro::IO::BinaryDecoder.new(StringIO.new(message['payload']))
+      decrypted = secret_box ? secret_box.decrypt(message['payload']) : message['payload']
+      decoder = Avro::IO::BinaryDecoder.new(StringIO.new(decrypted))
       reader = Avro::IO::DatumReader.new(MESSAGE_SCHEMA)
       payload = reader.read(decoder)
 
@@ -463,7 +466,7 @@ module CRDT
 
       encoder = Avro::IO::BinaryEncoder.new(StringIO.new(''.force_encoding('BINARY')))
       Avro::IO::DatumWriter.new(MESSAGE_SCHEMA).write(message_hash, encoder)
-      encoder.writer.string
+      secret_box ? secret_box.encrypt(encoder.writer.string) : encoder.writer.string
     end
 
     # Decodes a ClockUpdate message from a remote peer. It has the following structure:

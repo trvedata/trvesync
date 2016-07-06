@@ -2,6 +2,7 @@ source 'https://rubygems.org'
 gem 'avro'
 gem 'dispel'
 gem 'faye-websocket'
+gem 'rbnacl'
 
 group :test do
   gem 'rspec'

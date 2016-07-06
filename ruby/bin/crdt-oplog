@@ -39,7 +39,8 @@ message_reader = Avro::IO::DatumReader.new(CRDT::Encoding::MESSAGE_SCHEMA)
 operation_reader = Avro::IO::DatumReader.new(CRDT::Encoding::APP_OPERATION_SCHEMA)
 
 peer.message_log.each do |message|
-  msg_hash = message_reader.read(Avro::IO::BinaryDecoder.new(StringIO.new(message.encoded)))
+  decrypted = peer.secret_box ? peer.secret_box.decrypt(message.encoded) : message.encoded
+  msg_hash = message_reader.read(Avro::IO::BinaryDecoder.new(StringIO.new(decrypted)))
   msg_hash['sender'] = message.sender_id
   msg_hash['senderSeqNo'] = message.sender_seq_no
   msg_hash['offset'] = message.offset

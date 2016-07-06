@@ -314,6 +314,12 @@
         highest message offset that this peer has received. It is used when reconnecting to the
         server after some time offline, to catch up on any messages that were added to the channel
         while the client was away. The offset is initially -1 (if no message has been received).
+    - name: secretKey
+      doc: >-
+        Symmetric secret key used to encrypt messages on the channel by NaCl's SecretBox feature
+        (XSalsa20 stream cipher with Poly1305 authenticator, nonces are handled automatically).
+      default: null
+      type: ["null", {name: SecretKey, type: fixed, size: 32}]
     - name: defaultSchemaID
       type: ItemID
       doc: >-
@@ -402,8 +408,8 @@
             - name: payload
               type: bytes
               doc: >-
-                The message contents, currently a Message record in Avro binary encoding (may be
-                encrypted and signed in future).
+                The message contents, consisting of a Message record in Avro binary encoding, and
+                then encrypted using NaCl's SimpleBox secret-key encryption.
     - name: data
       type: TextDocument
       doc: The actual data structure being maintained at this peer.
