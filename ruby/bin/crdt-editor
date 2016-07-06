@@ -22,8 +22,9 @@ parser = OptionParser.new do |opts|
   opts.on('-k', '--secret-key key', 'Encrypt messages with symmetric key', String) do |secret_key|
     options[:secret_key] = secret_key
   end
-  opts.on('--debug-keys', 'Show keys that are pressed') { options[:debug_keys] = true }
-  opts.on('-h', '--help', 'Show usage information')     { puts opts; exit(1) }
+  opts.on('--passive',    'Run in non-interactive mode') { options[:passive   ] = true }
+  opts.on('--debug-keys', 'Show keys that are pressed')  { options[:debug_keys] = true }
+  opts.on('-h', '--help', 'Show usage information')      { puts opts; exit(1) }
 end
 
 parser.parse!
@@ -40,7 +41,12 @@ require 'crdt'
 require 'crdt/editor'
 
 File.open('/tmp/trvesync.log', 'a') do |logfile|
-  options[:logger] = lambda {|msg| logfile.puts(msg); logfile.flush }
+  options[:logger] = if options[:passive]
+                       lambda {|msg| $stderr.puts(msg); $stderr.flush }
+                     else
+                       lambda {|msg| logfile.puts(msg); logfile.flush }
+                     end
+
   options[:text_filename] = File.absolute_path(options[:text_filename])
   options[:crdt_filename] = File.join(File.dirname(options[:text_filename]),
                                       '.' + File.basename(options[:text_filename]) + '.crdt')

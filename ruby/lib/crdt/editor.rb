@@ -20,16 +20,24 @@ module CRDT
       @network.run
       wait_for_initial_sync
 
-      Dispel::Screen.open(@options) do |screen|
-        resize(screen.columns, screen.lines)
-        render(screen)
-
-        Dispel::Keyboard.output(timeout: 0.1) do |key|
+      if @options[:passive]
+        loop do
           @network.poll
-          break if key_pressed(key, screen) == :quit
+          sleep 0.1
+        end
+      else
+        Dispel::Screen.open(@options) do |screen|
+          resize(screen.columns, screen.lines)
+          render(screen)
+
+          Dispel::Keyboard.output(timeout: 0.1) do |key|
+            @network.poll
+            break if key_pressed(key, screen) == :quit
+          end
         end
       end
     ensure
+      puts 'Saving file...'
       save
     end
 

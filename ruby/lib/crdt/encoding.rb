@@ -315,6 +315,7 @@ module CRDT
             raise "Mismatched message payload: #{bin_to_hex(existing.encoded)} != #{bin_to_hex(message['payload'])}"
           end
           existing.offset = message['offset']
+          logger.call "Received own message: seqNo=#{message['senderSeqNo']} --> offset=#{message['offset']}"
 
         else
           # Message is not yet known to this peer, either because it came from someone else, or
@@ -322,6 +323,7 @@ module CRDT
           msg_obj = decode_message_payload(sender_id, message)
           message_log << msg_obj
           process_message(msg_obj)
+          logger.call "Received message: seqNo=#{message['senderSeqNo']} senderId=#{sender_id} offset=#{message['offset']}"
         end
 
       elsif message['lastKnownSeqNo'] # SendMessageError

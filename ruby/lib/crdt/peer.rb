@@ -38,6 +38,8 @@ module CRDT
     # Pseudo-operation, used to signal that all operations within a message have been processed.
     MessageProcessed = Struct.new(:last_seq_no)
 
+    attr_reader :logger
+
     # 256-bit hex string that uniquely identifies this peer.
     attr_reader :peer_id
 
@@ -154,13 +156,11 @@ module CRDT
     # Receives a message from a remote peer. The operations will be applied immediately if they are
     # causally ready, or buffered until later if dependencies are missing.
     def process_message(message)
-      #@logger.call "Received message: #{message.inspect}"
       if message.offset
         raise 'Non-monotonic channel offset' if message.offset <= channel_offset
         self.channel_offset = message.offset
       end
 
-      # TODO when our own message is delivered back to us, check that it matches what we were expecting
       if message.sender_id != peer_id
         @recv_buf[message.sender_id] ||= []
         @recv_buf[message.sender_id].concat(message.operations)
@@ -221,6 +221,7 @@ module CRDT
         raise "Client amnesia: latest local seqNo=#{peer_matrix.own_seq_no}, server last known=#{last_known}"
       end
 
+      logger.call "Re-sending messages from seqNo #{last_known} to #{peer_matrix.own_seq_no}"
       replay = message_log.select {|msg| msg.sender_id == peer_id && msg.sender_seq_no > last_known }
       @messages_to_send.concat(replay)
     end
