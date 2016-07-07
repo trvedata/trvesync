@@ -38,7 +38,12 @@ module CRDT
       end
     ensure
       puts 'Saving file...'
-      save
+      begin
+        save
+      rescue => e
+        puts "Error while saving: #{$!}"
+        puts e.backtrace.map{|line| "\t#{line}\n" }.join
+      end
     end
 
     # If this editor instance was started without specifying a channel ID, that means it is the one
