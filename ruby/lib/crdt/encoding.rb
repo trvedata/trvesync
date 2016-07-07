@@ -172,7 +172,7 @@ module CRDT
         offset = hash['offset'] unless hash['offset'] < 0
         hash['payload'].force_encoding('BINARY')
         message = Peer::Message.new(sender_id, hash['senderSeqNo'], offset, nil, nil, hash['payload'])
-        message_log << message
+        message_log_append(message)
       end
     end
 
@@ -301,9 +301,7 @@ module CRDT
           raise "Received message on unexpected channel: #{bin_to_hex(message['channelID'])}"
         end
 
-        existing = message_log.detect do |entry|
-          entry.sender_id == sender_id && entry.sender_seq_no == message['senderSeqNo']
-        end
+        existing = (messages_by_sender[sender_id] || [])[message['senderSeqNo'] - 1]
 
         if existing
           # Message is already known to this peer (because we sent it ourselves, or because it is
@@ -321,7 +319,7 @@ module CRDT
           # Message is not yet known to this peer, either because it came from someone else, or
           # because we sent it but crashed before persisting that fact to disk.
           msg_obj = decode_message_payload(sender_id, message)
-          message_log << msg_obj
+          message_log_append(msg_obj)
           process_message(msg_obj)
           logger.call "Received message: seqNo=#{message['senderSeqNo']} senderId=#{sender_id} offset=#{message['offset']}"
         end

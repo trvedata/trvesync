@@ -79,6 +79,9 @@ module CRDT
     # Array of Message objects containing the log of all changes to the document.
     attr_reader :message_log
 
+    # Hash of peer ID => array of messages sent by that peer
+    attr_reader :messages_by_sender
+
 
     # Loads a peer's state from a file with the specified file path, or the specified IO object.
     def self.load(file, options={})
@@ -98,6 +101,7 @@ module CRDT
       @ordered_list = OrderedList.new(self)
       @channel_offset = -1
       @message_log = []
+      @messages_by_sender = {}
       @messages_to_send = []
       @logger = options[:logger] || lambda {|msg| }
       @send_buf = []
@@ -169,6 +173,16 @@ module CRDT
       end
     end
 
+    def message_log_append(msg)
+      expected = (messages_by_sender[msg.sender_id] || []).size + 1 # sender_seq_no starts counting at 1
+      if msg.sender_seq_no != expected
+        raise "Non-consecutive sequence number: #{msg.sender_seq_no} != #{expected} for peer #{msg.sender_id}"
+      end
+      messages_by_sender[msg.sender_id] ||= []
+      messages_by_sender[msg.sender_id] << msg
+      message_log << msg
+    end
+
     # Returns an array of messages that should be sent to remote peers, including any messages that
     # were generated previously but have not yet been confirmed as successfully sent. Resets the
     # buffer of pending messages to send, so the same messages won't be returned again.
@@ -176,7 +190,7 @@ module CRDT
       if anything_to_send?
         msg = make_message
         @messages_to_send << msg
-        @message_log << msg
+        message_log_append(msg)
       end
 
       ret = @messages_to_send
@@ -208,7 +222,7 @@ module CRDT
 
       # Any logged messages that were pending (not yet successfully broadcast to other peers) at the
       # time the peer was shut down should be re-enqueued in the network buffer.
-      @messages_to_send = message_log.select {|msg| msg.offset.nil? }
+      @messages_to_send = (messages_by_sender[peer_id] || []).select {|msg| msg.offset.nil? }
     end
 
     # Called if the server complains that it does not know about some message that we had previously
@@ -222,7 +236,7 @@ module CRDT
       end
 
       logger.call "Re-sending messages from seqNo #{last_known} to #{peer_matrix.own_seq_no}"
-      replay = message_log.select {|msg| msg.sender_id == peer_id && msg.sender_seq_no > last_known }
+      replay = messages_by_sender[peer_id][last_known..-1]
       @messages_to_send.concat(replay)
     end
 
