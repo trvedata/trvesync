@@ -313,6 +313,7 @@ module CRDT
             raise "Mismatched message payload: #{bin_to_hex(existing.encoded)} != #{bin_to_hex(message['payload'])}"
           end
           existing.offset = message['offset']
+          process_message(existing)
           logger.call "Received own message: seqNo=#{message['senderSeqNo']} --> offset=#{message['offset']}"
 
         else
