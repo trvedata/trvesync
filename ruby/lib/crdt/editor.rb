@@ -44,6 +44,9 @@ module CRDT
         puts "Error while saving: #{$!}"
         puts e.backtrace.map{|line| "\t#{line}\n" }.join
       end
+      puts "To join this document, use the following options:"
+      puts "    -j #{peer.channel_id} \\"
+      puts "    -k #{peer.secret_key}"
     end
 
     # If this editor instance was started without specifying a channel ID, that means it is the one
