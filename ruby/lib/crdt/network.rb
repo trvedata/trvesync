@@ -25,7 +25,6 @@ module CRDT
       parsed_url.query = URI.encode_www_form(URI.decode_www_form(parsed_url.query || '') + [['peer_id', peer.peer_id]])
       @url = parsed_url.to_s
       @logger = logger
-      @subscribe_request = peer.encode_subscribe_request
       @channel_id = peer.channel_id
       @recv_queue = Queue.new
       @send_queue = Queue.new
@@ -62,7 +61,7 @@ module CRDT
         raise 'Two connections open simultaneously' if @websocket
         @websocket = websocket
         logger.call 'Connected to WebSocket server'
-        @websocket.send(@subscribe_request.unpack('C*'))
+        @websocket.send(@peer.encode_subscribe_request.unpack('C*'))
         send_queue_poll
       end
 

@@ -161,7 +161,7 @@ module CRDT
     # causally ready, or buffered until later if dependencies are missing.
     def process_message(message)
       if message.offset
-        raise 'Non-monotonic channel offset' if message.offset <= channel_offset
+        raise "Non-monotonic channel offset: #{message.offset} <= #{channel_offset}" if message.offset <= channel_offset
         self.channel_offset = message.offset
       end
 

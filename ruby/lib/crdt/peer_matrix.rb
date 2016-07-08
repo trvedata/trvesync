@@ -164,7 +164,7 @@ module CRDT
 
       update.entries.each do |new_entry|
         old_entry = peer_index_mapping(sender_id, new_entry.peer_id, new_entry.peer_index)
-        raise 'Clock update went backwards' if old_entry.last_seq_no > new_entry.last_seq_no
+        raise "Clock update went backwards: #{old_entry.last_seq_no} > #{new_entry.last_seq_no}" if old_entry.last_seq_no > new_entry.last_seq_no
         old_entry.last_seq_no = new_entry.last_seq_no
       end
     end
