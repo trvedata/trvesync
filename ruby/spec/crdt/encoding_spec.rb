@@ -260,5 +260,16 @@ RSpec.describe CRDT::Encoding do
       expect(logged_msg.offset       ).to be_nil
       expect(logged_msg.encoded.size ).to be > 10
     end
+
+    it 'should use the maximum counter value to create Lamport timestamps' do
+      server = MockServer.new(2)
+      server.peers[0].ordered_list.insert(0, 'a').insert(1, 'b').insert(2, 'c')
+      server.broadcast(0)
+      server.peers[1].ordered_list.insert(3, 'd')
+      server.broadcast(1)
+      item_ids = []
+      server.peers[0].ordered_list.each_item {|item| item_ids << item.insert_id }
+      expect(item_ids[3].logical_ts).to be > item_ids[2].logical_ts
+    end
   end
 end

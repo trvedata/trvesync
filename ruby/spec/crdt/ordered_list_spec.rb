@@ -138,6 +138,19 @@ RSpec.describe CRDT::OrderedList do
       peer.make_message
       expect(peer.make_message.operations).to eq []
     end
+
+    it 'should use the maximum counter value to create Lamport timestamps' do
+      peer0, peer1 = make_peers(2)
+      peer0.ordered_list.insert(0, :a).insert(1, :b).insert(2, :c)
+      peer1.process_message(peer0.make_message)
+      peer1.ordered_list.insert(3, :d)
+      expect(peer1.make_message.operations.last).to eq (
+        CRDT::Operation.new(
+          CRDT::ItemID.new(6, 'peer1'),
+          CRDT::ItemID.new(2, 'peer0'),
+          CRDT::OrderedList::InsertOp.new(CRDT::ItemID.new(5, 'peer0'), :d))
+      )
+    end
   end
 
   context 'applying remote operations' do

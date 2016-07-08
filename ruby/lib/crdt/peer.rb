@@ -280,11 +280,8 @@ module CRDT
           peer_matrix.processed_incoming_msg(ready_peer_id, operation.last_seq_no)
 
         when Operation
-          if operation.op_id.nil?
-            operation.op_id = peer_matrix.next_logical_ts(ready_peer_id)
-          else
-            peer_matrix.seen_logical_ts(operation.op_id)
-          end
+          operation.op_id ||= peer_matrix.next_logical_ts(ready_peer_id)
+          peer_matrix.seen_logical_ts(operation.op_id)
 
           # TODO route by operation.target
           case operation.op
