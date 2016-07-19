@@ -62,7 +62,7 @@ module CRDT
       raise 'Cannot save peer without default_schema_id' if default_schema_id.nil?
       {
         'channelID'       => hex_to_bin(channel_id),
-        'channelOffset'   => channel_offset,
+        'channelOffset'   => channel_offset, # obsolete (determined from message_log)
         'secretKey'       => secret_key && hex_to_bin(secret_key),
         'defaultSchemaID' => encode_item_id(default_schema_id),
         'cursorsItemID'   => encode_item_id(cursors_item_id),
@@ -84,7 +84,7 @@ module CRDT
       decode_cursors(state['data']['cursors'])
       decode_ordered_list(state['data']['characters'])
       self.channel_id     = bin_to_hex(state['channelID'])
-      self.channel_offset = state['channelOffset']
+      self.channel_offset = message_log.map(&:offset).compact.max || -1
       self.secret_key     = state['secretKey'] && bin_to_hex(state['secretKey'])
       self.default_schema_id  = decode_item_id(peer_id, state['defaultSchemaID'])
       self.cursors_item_id    = decode_item_id(peer_id, state['cursorsItemID'])
@@ -297,9 +297,15 @@ module CRDT
       if message['payload'] # ReceiveMessage message
         message['payload'].force_encoding('BINARY')
         sender_id = bin_to_hex(message['senderID'])
+
         if bin_to_hex(message['channelID']) != channel_id
           raise "Received message on unexpected channel: #{bin_to_hex(message['channelID'])}"
         end
+
+        if message['offset'] <= channel_offset
+          raise "Non-monotonic channel offset: #{message.offset} <= #{channel_offset}"
+        end
+        self.channel_offset = message['offset']
 
         existing = (messages_by_sender[sender_id] || [])[message['senderSeqNo'] - 1]
 
@@ -318,7 +324,6 @@ module CRDT
             logger.call "Received duplicate message from #{sender_id}, seqNo=#{message['senderSeqNo']}"
           end
           existing.offset = message['offset']
-          process_message(existing)
 
         else
           # Message is not yet known to this peer, either because it came from someone else, or

@@ -160,11 +160,6 @@ module CRDT
     # Receives a message from a remote peer. The operations will be applied immediately if they are
     # causally ready, or buffered until later if dependencies are missing.
     def process_message(message)
-      if message.offset
-        raise "Non-monotonic channel offset: #{message.offset} <= #{channel_offset}" if message.offset <= channel_offset
-        self.channel_offset = message.offset
-      end
-
       if message.sender_id != peer_id
         @recv_buf[message.sender_id] ||= []
         @recv_buf[message.sender_id].concat(message.operations)
