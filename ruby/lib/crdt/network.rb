@@ -83,6 +83,10 @@ module CRDT
     # Called periodically by EventMachine reactor thread to send any messages
     # waiting in the send queue.
     def send_queue_poll
+      if @websocket
+        logger.call "send_queue_poll: retrying #{@retry_queue.size} messages" unless @retry_queue.empty?
+        logger.call "send_queue_poll: sending #{@send_queue.size} messages" unless @send_queue.empty?
+      end
       send_message(@retry_queue.shift)    while @websocket && !@retry_queue.empty?
       send_message(@send_queue.pop(true)) while @websocket && !@send_queue.empty?
     end

@@ -312,9 +312,13 @@ module CRDT
           if existing.encoded != message['payload']
             raise "Mismatched message payload: #{bin_to_hex(existing.encoded)} != #{bin_to_hex(message['payload'])}"
           end
+          if sender_id == peer_id
+            logger.call "Received own message: seqNo=#{message['senderSeqNo']} --> offset=#{message['offset']}"
+          else
+            logger.call "Received duplicate message from #{sender_id}, seqNo=#{message['senderSeqNo']}"
+          end
           existing.offset = message['offset']
           process_message(existing)
-          logger.call "Received own message: seqNo=#{message['senderSeqNo']} --> offset=#{message['offset']}"
 
         else
           # Message is not yet known to this peer, either because it came from someone else, or
@@ -376,6 +380,7 @@ module CRDT
     #       'startOffset' => 123
     #     }
     def encode_subscribe_request
+      logger.call "Subscribing to channel #{channel_id} with startOffset #{channel_offset}"
       message_hash = {
         'channelID'   => hex_to_bin(channel_id),
         'startOffset' => channel_offset
