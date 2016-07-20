@@ -68,11 +68,12 @@ module CRDT
     attr_reader :next_ts_by_peer_id
 
 
-    def initialize(own_peer_id)
+    def initialize(own_peer_id, logger)
       @matrix = [[PeerVClockEntry.new(own_peer_id, 0, 0)]]
       @index_by_peer_id = {own_peer_id => 0}
       @next_ts_by_peer_id = {own_peer_id => 0}
       @local_clock_update = ClockUpdate.new
+      @logger = logger
     end
 
     # The peer ID (globally unique hex string) for the local device.
@@ -164,8 +165,11 @@ module CRDT
 
       update.entries.each do |new_entry|
         old_entry = peer_index_mapping(sender_id, new_entry.peer_id, new_entry.peer_index)
-        raise "Clock update went backwards: #{old_entry.last_seq_no} > #{new_entry.last_seq_no}" if old_entry.last_seq_no > new_entry.last_seq_no
-        old_entry.last_seq_no = new_entry.last_seq_no
+        if old_entry.last_seq_no <= new_entry.last_seq_no
+          old_entry.last_seq_no = new_entry.last_seq_no
+        else
+          @logger.call "WARNING: Clock update went backwards: #{old_entry.last_seq_no} > #{new_entry.last_seq_no}"
+        end
       end
     end
 

@@ -96,14 +96,14 @@ module CRDT
     # new random peer ID (256-bit hex string).
     def initialize(peer_id=nil, options={})
       @peer_id = peer_id || bin_to_hex(RbNaCl::Random.random_bytes(32))
-      @peer_matrix = PeerMatrix.new(@peer_id)
+      @logger = options[:logger] || lambda {|msg| }
+      @peer_matrix = PeerMatrix.new(@peer_id, @logger)
       @cursors = Map.new(self)
       @ordered_list = OrderedList.new(self)
       @channel_offset = -1
       @message_log = []
       @messages_by_sender = {}
       @messages_to_send = []
-      @logger = options[:logger] || lambda {|msg| }
       @send_buf = []
       @recv_buf = {} # map of sender_id => array of operations
       self.secret_key = options[:secret_key]
