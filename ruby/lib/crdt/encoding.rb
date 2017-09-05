@@ -79,13 +79,20 @@ module CRDT
     # Loads the state of this peer from a structure of nested hashes and lists, according to the
     # +PeerState+ schema.
     def from_avro_hash(state)
-      decode_peer_matrix(state['peers'])
-      decode_message_log(state['messageLog'])
-      decode_cursors(state['data']['cursors'])
-      decode_ordered_list(state['data']['characters'])
+      self.secret_key = state['secretKey'] && bin_to_hex(state['secretKey'])
+
+      if @options[:decode_messages]
+        state['peers'].each {|peer| peer_matrix.peer_id_to_index(bin_to_hex(peer['peerID'])) }
+        decode_message_log(state['messageLog'])
+      else
+        decode_peer_matrix(state['peers'])
+        decode_message_log(state['messageLog'])
+        decode_cursors(state['data']['cursors'])
+        decode_ordered_list(state['data']['characters'])
+      end
+
       self.channel_id     = bin_to_hex(state['channelID'])
       self.channel_offset = message_log.map(&:offset).compact.max || -1
-      self.secret_key     = state['secretKey'] && bin_to_hex(state['secretKey'])
       self.default_schema_id  = decode_item_id(peer_id, state['defaultSchemaID'])
       self.cursors_item_id    = decode_item_id(peer_id, state['cursorsItemID'])
       self.characters_item_id = decode_item_id(peer_id, state['charactersItemID'])
@@ -171,7 +178,12 @@ module CRDT
         sender_id = peer_matrix.peer_index_to_id(hash['senderPeerIndex'])
         offset = hash['offset'] unless hash['offset'] < 0
         hash['payload'].force_encoding('BINARY')
-        message = Peer::Message.new(sender_id, hash['senderSeqNo'], offset, nil, nil, hash['payload'])
+
+        if @options[:decode_messages]
+          message = decode_message_payload(sender_id, hash)
+        else
+          message = Peer::Message.new(sender_id, hash['senderSeqNo'], offset, nil, nil, hash['payload'])
+        end
         message_log_append(message)
       end
     end
@@ -330,7 +342,7 @@ module CRDT
           # because we sent it but crashed before persisting that fact to disk.
           msg_obj = decode_message_payload(sender_id, message)
           message_log_append(msg_obj)
-          process_message(msg_obj)
+          process_message(msg_obj) if msg_obj.sender_id != peer_id
           logger.call "Received message: seqNo=#{message['senderSeqNo']} senderId=#{sender_id} offset=#{message['offset']}"
         end
 

@@ -96,6 +96,7 @@ module CRDT
     # new random peer ID (256-bit hex string).
     def initialize(peer_id=nil, options={})
       @peer_id = peer_id || bin_to_hex(RbNaCl::Random.random_bytes(32))
+      @options = options
       @logger = options[:logger] || lambda {|msg| }
       @peer_matrix = PeerMatrix.new(@peer_id, @logger)
       @cursors = Map.new(self)
@@ -160,12 +161,10 @@ module CRDT
     # Receives a message from a remote peer. The operations will be applied immediately if they are
     # causally ready, or buffered until later if dependencies are missing.
     def process_message(message)
-      if message.sender_id != peer_id
-        @recv_buf[message.sender_id] ||= []
-        @recv_buf[message.sender_id].concat(message.operations)
-        @recv_buf[message.sender_id] << MessageProcessed.new(message.sender_seq_no)
-        while apply_operations_if_ready; end
-      end
+      @recv_buf[message.sender_id] ||= []
+      @recv_buf[message.sender_id].concat(message.operations)
+      @recv_buf[message.sender_id] << MessageProcessed.new(message.sender_seq_no)
+      while apply_operations_if_ready; end
     end
 
     def message_log_append(msg)

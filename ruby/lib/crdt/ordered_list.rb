@@ -22,7 +22,7 @@ module CRDT
     # Internal structure representing a list element.
     Item = Struct.new(:insert_id, :delete_ts, :value, :previous, :next)
 
-    attr_reader :peer
+    attr_reader :peer, :items_by_id
 
     # Creates an empty ordered list, running at the local +peer+.
     def initialize(peer)
@@ -188,6 +188,19 @@ module CRDT
         item = item.next
       end
       items
+    end
+
+    # Determines the index of the list item with the given ID (not counting tombstones).
+    # Returns nil if there is no such item. FIXME: O(n) complexity.
+    def index_by_id(item_id)
+      item = @head
+      index = -1
+      while item
+        index += 1 if !item.delete_ts
+        return index if item.insert_id == item_id
+        item = item.next
+      end
+      nil
     end
 
     private

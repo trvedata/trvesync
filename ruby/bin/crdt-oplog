@@ -1,10 +1,16 @@
 #!/usr/bin/env ruby
 
 $stderr.sync = true
+edit_log = false
 filename = ARGV.shift
 
+if filename == '--edits'
+  edit_log = true
+  filename = ARGV.shift
+end
+
 if filename.nil?
-  $stderr.puts "Usage: crdt-oplog file.crdt"
+  $stderr.puts "Usage: crdt-oplog [--edits] file.crdt"
   exit(1)
 end
 
@@ -34,24 +40,74 @@ def encode_binary(obj)
   end
 end
 
-peer = CRDT::Peer.load(filename)
-message_reader = Avro::IO::DatumReader.new(CRDT::Encoding::MESSAGE_SCHEMA)
-operation_reader = Avro::IO::DatumReader.new(CRDT::Encoding::APP_OPERATION_SCHEMA)
-
-peer.message_log.each do |message|
-  decrypted = peer.secret_box ? peer.secret_box.decrypt(message.encoded) : message.encoded
-  msg_hash = message_reader.read(Avro::IO::BinaryDecoder.new(StringIO.new(decrypted)))
-  msg_hash['sender'] = message.sender_id
-  msg_hash['senderSeqNo'] = message.sender_seq_no
-  msg_hash['offset'] = message.offset
-  msg_hash['operations'].map! do |op_hash|
-    if op_hash['operation']
-      decoder = Avro::IO::BinaryDecoder.new(StringIO.new(op_hash['operation']))
-      app_op = encode_binary(operation_reader.read(decoder))
-      app_op.merge('target' => op_hash['target'])
-    else
-      encode_binary(op_hash)
+def print_edit_log(filename)
+  puts "var text = [];"
+  num_ops = 0
+  peer = CRDT::Peer.load(filename, decode_messages: true)
+  peer.message_log.each do |message|
+    edits = message.operations.select do |operation|
+      operation.is_a?(CRDT::Operation) &&
+        (operation.op.is_a?(CRDT::OrderedList::InsertOp) || operation.op.is_a?(CRDT::OrderedList::DeleteOp))
     end
+
+    raise 'More than one edit in a message' if edits.size > 1
+    if edits.size > 0
+      case edits.first.op
+      when CRDT::OrderedList::InsertOp
+        index = -1
+        if edits.first.op.reference_id
+          index = peer.ordered_list.index_by_id(edits.first.op.reference_id)
+          raise "Cannot resolve reference ID #{edits.first.op.reference_id.inspect}" unless index
+        end
+        puts "text.splice(#{index + 1}, 0, #{JSON.generate(edits.first.op.value)});"
+
+      when CRDT::OrderedList::DeleteOp
+        if !peer.ordered_list.items_by_id[edits.first.target].delete_ts
+          index = peer.ordered_list.index_by_id(edits.first.target)
+          puts "text.splice(#{index}, 1);"
+        end
+      end
+
+      num_ops += 1
+      if num_ops % 10_000 == 0
+        puts "if (text.join('') != #{JSON.generate(peer.ordered_list.to_a.join)}) throw 'mismatch: ' + text.join('');"
+      end
+    end
+
+    peer.process_message(message)
   end
-  puts JSON.generate(msg_hash)
+
+  puts "if (text.join('') != #{JSON.generate(peer.ordered_list.to_a.join)}) throw 'mismatch: ' + text.join('');"
+  puts 'console.log("good!");'
+end
+
+def print_message_log(filename)
+  peer = CRDT::Peer.load(filename)
+  message_reader = Avro::IO::DatumReader.new(CRDT::Encoding::MESSAGE_SCHEMA)
+  operation_reader = Avro::IO::DatumReader.new(CRDT::Encoding::APP_OPERATION_SCHEMA)
+
+  peer.message_log.each do |message|
+    decrypted = peer.secret_box ? peer.secret_box.decrypt(message.encoded) : message.encoded
+    msg_hash = message_reader.read(Avro::IO::BinaryDecoder.new(StringIO.new(decrypted)))
+    msg_hash['sender'] = message.sender_id
+    msg_hash['senderSeqNo'] = message.sender_seq_no
+    msg_hash['offset'] = message.offset
+    msg_hash['operations'].map! do |op_hash|
+      if op_hash['operation']
+        decoder = Avro::IO::BinaryDecoder.new(StringIO.new(op_hash['operation']))
+        app_op = encode_binary(operation_reader.read(decoder))
+        app_op.merge('target' => op_hash['target'])
+      else
+        encode_binary(op_hash)
+      end
+    end
+    puts JSON.generate(msg_hash)
+  end
+end
+
+
+if edit_log
+  print_edit_log filename
+else
+  print_message_log filename
 end
