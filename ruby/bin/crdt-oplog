@@ -7,6 +7,9 @@ filename = ARGV.shift
 if filename == '--edits'
   edit_log = true
   filename = ARGV.shift
+elsif filename == '--decode'
+  decoded_log = true
+  filename = ARGV.shift
 end
 
 if filename.nil?
@@ -40,9 +43,13 @@ def encode_binary(obj)
   end
 end
 
+def format_item_id(item_id, peer)
+  return nil unless item_id
+  [item_id.logical_ts, peer.peer_matrix.peer_id_to_index(item_id.peer_id)].map(&:to_s).join('-')
+end
+
 def print_edit_log(filename)
   puts "var text = [];"
-  num_ops = 0
   peer = CRDT::Peer.load(filename, decode_messages: true)
   peer.message_log.each do |message|
     edits = message.operations.select do |operation|
@@ -67,11 +74,6 @@ def print_edit_log(filename)
           puts "text.splice(#{index}, 1);"
         end
       end
-
-      num_ops += 1
-      if num_ops % 10_000 == 0
-        puts "if (text.join('') != #{JSON.generate(peer.ordered_list.to_a.join)}) throw 'mismatch: ' + text.join('');"
-      end
     end
 
     peer.process_message(message)
@@ -79,6 +81,65 @@ def print_edit_log(filename)
 
   puts "if (text.join('') != #{JSON.generate(peer.ordered_list.to_a.join)}) throw 'mismatch: ' + text.join('');"
   puts 'console.log("good!");'
+end
+
+def print_decoded_log(filename)
+  first_msg = true
+  $stdout.write("{\"messages\": [\n")
+
+  peer = CRDT::Peer.load(filename, decode_messages: true)
+  peer.message_log.each do |message|
+    peer.process_message(message)
+    hash = {
+      :time => (message.timestamp.to_f * 1000).round,
+      :node => peer.peer_matrix.peer_id_to_index(message.sender_id),
+      :seq => message.sender_seq_no,
+      :ops => []
+    }
+
+    message.operations.each do |operation|
+      case operation
+      when CRDT::SchemaUpdate # ignore
+
+      when CRDT::PeerMatrix::ClockUpdate
+        operation.entries.each do |entry|
+          hash[:ops] << {
+            :op   => 'depend',
+            :node => peer.peer_matrix.peer_id_to_index(entry.peer_id),
+            :seq  => entry.last_seq_no
+          }
+        end
+
+      when CRDT::Operation
+        id = format_item_id(operation.op_id, peer)
+
+        case operation.op
+        when CRDT::InitializeRecordField # ignore
+        when CRDT::Map::PutOp
+          hash[:ops] << {:id => id, :op => 'cursor',
+                         :val => format_item_id(operation.op.value, peer)}
+        when CRDT::Map::WriteOp
+          hash[:ops] << {:id => id, :op => 'cursor',
+                         :val => format_item_id(operation.op.value, peer)}
+        when CRDT::OrderedList::InsertOp
+          hash[:ops] << {:id => id, :op => 'insert',
+                         :ref => format_item_id(operation.op.reference_id, peer),
+                         :val => operation.op.value}
+        when CRDT::OrderedList::DeleteOp
+          hash[:ops] << {:id => id, :op => 'delete',
+                         :ref => format_item_id(operation.target, peer)}
+        else
+          raise "Unexpected operation type: #{operation.inspect}"
+        end
+      else raise "Unexpected operation type: #{operation.inspect}"
+      end
+    end
+
+    $stdout.write(",\n") unless first_msg
+    $stdout.write(JSON.generate(hash))
+    first_msg = false
+  end
+  $stdout.write("\n]}\n")
 end
 
 def print_message_log(filename)
@@ -108,6 +169,8 @@ end
 
 if edit_log
   print_edit_log filename
+elsif decoded_log
+  print_decoded_log filename
 else
   print_message_log filename
 end
